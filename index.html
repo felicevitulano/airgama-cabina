@@ -245,13 +245,13 @@ const BI_CLI_RAW = [
 //  OLAP cube — fact table sintetica + motore di aggregazione
 // ============================================================
 const OLAP_FAM = [
-  { name: 'Valvole anti-riflusso', margin: 41, w: 6,  price: 12 },
-  { name: 'Griglie di aerazione',  margin: 38, w: 11, price: 4 },
-  { name: 'Raccordi PVC',          margin: 34, w: 24, price: 3.5 },
-  { name: 'Raccordi PP',           margin: 29, w: 16, price: 4 },
-  { name: 'Sifoni',                margin: 26, w: 14, price: 5 },
-  { name: 'Drenaggio suolo',       margin: 22, w: 13, price: 8 },
-  { name: 'Cassette WC',           margin: 19, w: 16, price: 18 },
+  { name: 'Valvole anti-riflusso', margin: 41, w: 6,  price: 12, ach: 0.82 },
+  { name: 'Griglie di aerazione',  margin: 38, w: 11, price: 4,  ach: 1.06 },
+  { name: 'Raccordi PVC',          margin: 34, w: 24, price: 3.5, ach: 0.98 },
+  { name: 'Raccordi PP',           margin: 29, w: 16, price: 4,  ach: 0.92 },
+  { name: 'Sifoni',                margin: 26, w: 14, price: 5,  ach: 1.11 },
+  { name: 'Drenaggio suolo',       margin: 22, w: 13, price: 8,  ach: 0.88 },
+  { name: 'Cassette WC',           margin: 19, w: 16, price: 18, ach: 1.03 },
 ];
 const OLAP_CLI = [
   { name: 'Idrotermica Salento',      area: 'Italia', regione: 'Puglia',   w: 412, mod: 2,   scad: 2.1 },
@@ -276,17 +276,21 @@ function _rng(seed) { let s = seed % 2147483647; if (s <= 0) s += 2147483646; re
 const FACTS = (function () {
   const rnd = _rng(20260620);
   const raw = [];
-  OLAP_CLI.forEach(c => OLAP_FAM.forEach(f => OLAP_MESI.forEach(m => {
+  OLAP_CLI.forEach(c => OLAP_FAM.forEach(f => OLAP_MESI.forEach((m, mi) => {
     const noise = 0.7 + rnd() * 0.6;
-    raw.push({ cliente: c.name, area: c.area, regione: c.regione, famiglia: f.name, mese: m.name, _w: c.w * f.w * m.f * noise, margin: f.margin + c.mod, price: f.price });
+    raw.push({ cliente: c.name, area: c.area, regione: c.regione, famiglia: f.name, mese: m.name, mi, _w: c.w * f.w * m.f * noise, margin: f.margin + c.mod, price: f.price, ach: f.ach });
   })));
   const tot = raw.reduce((a, r) => a + r._w, 0);
   const scale = 4500000 / tot;
   const facts = raw.map(r => {
     const fatturato = r._w * scale;
+    // budget: deriva dal consuntivo / tasso di raggiungimento (per famiglia, con lieve variazione mensile)
+    const ach = r.ach * (1 + (r.mi - 2.5) * 0.012);
+    const budget = fatturato / ach;
     return { cliente: r.cliente, area: r.area, regione: r.regione, famiglia: r.famiglia, mese: r.mese,
              trimestre: ['Gen', 'Feb', 'Mar'].includes(r.mese) ? 'T1' : 'T2',
-             fatturato, margine: fatturato * (r.margin / 100), qta: Math.round(fatturato / r.price), scaduto: 0 };
+             fatturato, budget, delta: fatturato - budget,
+             margine: fatturato * (r.margin / 100), qta: Math.round(fatturato / r.price), scaduto: 0 };
   });
   OLAP_CLI.forEach(c => {
     if (!c.scad) return;
@@ -298,6 +302,9 @@ const FACTS = (function () {
 
 const MEASURES = {
   fatturato:  { label: 'Fatturato',  kind: 'eur', field: 'fatturato' },
+  budget:     { label: 'Budget',     kind: 'eur', field: 'budget' },
+  delta:      { label: 'Δ vs budget', kind: 'eur', field: 'delta' },
+  achiev:     { label: '% su budget', kind: 'pct', num: 'fatturato', den: 'budget' },
   margine:    { label: 'Margine €',  kind: 'eur', field: 'margine' },
   marginePct: { label: 'Margine %',  kind: 'pct', num: 'margine', den: 'fatturato' },
   qta:        { label: 'Quantità',   kind: 'num', field: 'qta' },
@@ -314,9 +321,11 @@ function olapFmt(v, mKey) {
   const M = MEASURES[mKey];
   if (M.kind === 'pct') return v.toFixed(1).replace('.', ',') + '%';
   if (M.kind === 'num') return Math.round(v).toLocaleString('it-IT');
-  if (Math.abs(v) >= 1e6) return '€ ' + (v / 1e6).toFixed(2).replace('.', ',') + 'M';
-  if (Math.abs(v) >= 1e3) return '€ ' + Math.round(v / 1e3).toLocaleString('it-IT') + 'k';
-  return '€ ' + Math.round(v).toLocaleString('it-IT');
+  const sign = v < 0 ? '−' : '';
+  const a = Math.abs(v);
+  if (a >= 1e6) return sign + '€ ' + (a / 1e6).toFixed(2).replace('.', ',') + 'M';
+  if (a >= 1e3) return sign + '€ ' + Math.round(a / 1e3).toLocaleString('it-IT') + 'k';
+  return sign + '€ ' + Math.round(a).toLocaleString('it-IT');
 }
 function olapDistinct(records, dim) {
   if (dim === 'mese') return OLAP_MESI.map(m => m.name).filter(v => records.some(r => r.mese === v));
@@ -325,13 +334,61 @@ function olapDistinct(records, dim) {
 }
 function olapBarColor(mKey, v) {
   if (mKey === 'marginePct') return v >= 30 ? '#2e9e5f' : (v >= 22 ? '#dfa000' : '#d23b2c');
+  if (mKey === 'achiev') return v >= 100 ? '#2e9e5f' : (v >= 90 ? '#dfa000' : '#d23b2c');
+  if (mKey === 'delta') return v >= 0 ? '#2e9e5f' : '#d23b2c';
   if (mKey === 'scaduto') return '#d23b2c';
   return '#1b4a93';
+}
+
+// ---------- chart renderers (SVG/CSS, offline) ----------
+function chLine(rows, mKey, rows2, mKey2) {
+  const all = rows.map(r => r.val).concat(rows2 ? rows2.map(r => r.val) : []);
+  const max = Math.max(1, ...all.map(Math.abs)), min = Math.min(0, ...all);
+  const W = 320, H = 120, pad = 10, base = H - 20;
+  const n = rows.length, dx = (W - 2 * pad) / (n - 1 || 1);
+  const x = i => pad + i * dx, y = v => base - ((v - min) / ((max - min) || 1)) * (base - 10);
+  const line = (rs, col, fill) => {
+    const pts = rs.map((r, i) => `${x(i).toFixed(1)},${y(r.val).toFixed(1)}`).join(' ');
+    const area = fill ? `<polyline points="${pad},${base} ${pts} ${(W - pad).toFixed(1)},${base}" fill="rgba(27,74,147,.10)" stroke="none"/>` : '';
+    const dots = rs.map((r, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(r.val).toFixed(1)}" r="2.6" fill="${col}"/>`).join('');
+    return area + `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>` + dots;
+  };
+  const labels = rows.map((r, i) => `<text x="${x(i).toFixed(1)}" y="${H - 4}" text-anchor="middle" font-size="8" fill="#a99e8d" font-family="IBM Plex Mono">${r.label}</text>`).join('');
+  const second = rows2 ? line(rows2, '#cab32e', false) : '';
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:130px;display:block;">${line(rows, '#1b4a93', true)}${second}${labels}</svg>`;
+}
+function chDonut(rows, mKey) {
+  const tot = rows.reduce((a, r) => a + Math.abs(r.val), 0) || 1;
+  const cols = ['#1b4a93', '#6f8fd8', '#a9bfe6', '#cdd8f0', '#dfe6f3'];
+  let acc = 0;
+  const segs = rows.map((r, i) => { const s = acc / tot * 100; acc += Math.abs(r.val); return `${cols[i % cols.length]} ${s}% ${acc / tot * 100}%`; }).join(',');
+  const legend = rows.map((r, i) => `<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;"><span style="width:10px;height:10px;border-radius:3px;background:${cols[i % cols.length]};flex:none;"></span><span style="font-size:12px;color:#3a342c;flex:1;">${r.label}</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:600;color:#211d17;">${Math.round(Math.abs(r.val) / tot * 100)}%</span></div>`).join('');
+  return `<div style="display:flex;align-items:center;gap:16px;"><div style="width:98px;height:98px;border-radius:50%;flex:none;background:conic-gradient(${segs});display:flex;align-items:center;justify-content:center;"><div style="width:56px;height:56px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#8a8073;">${olapFmt(tot, mKey)}</div></div><div style="flex:1;min-width:120px;">${legend}</div></div>`;
+}
+function chColumns(rows, mKey) {
+  const data = rows.filter(r => Math.abs(r.val) > 0);
+  if (!data.length) return `<div style="font-size:12px;color:#a99e8d;">Nessun dato.</div>`;
+  const max = Math.max(1, ...data.map(r => Math.abs(r.val)));
+  return `<div style="display:flex;align-items:flex-end;gap:7px;height:130px;">${data.map(r => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px;height:100%;"><div style="font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;color:#211d17;">${olapFmt(r.val, mKey)}</div><div style="width:100%;height:${Math.round(Math.abs(r.val) / max * 92)}%;min-height:3px;background:${olapBarColor(mKey, r.val)};border-radius:4px 4px 0 0;"></div><div style="font-size:8px;color:#a99e8d;text-align:center;line-height:1.1;height:20px;overflow:hidden;">${r.label}</div></div>`).join('')}</div>`;
+}
+function chBars(rows, mKey, labelW) {
+  const data = rows.filter(r => Math.abs(r.val) > 0);
+  if (!data.length) return `<div style="font-size:12px;color:#a99e8d;">Nessun dato per la selezione corrente.</div>`;
+  const mx = Math.max(1, ...data.map(r => Math.abs(r.val)));
+  return `<div style="display:flex;flex-direction:column;gap:9px;">${data.map(r => `
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:${labelW || 120}px;flex:none;font-size:11.5px;color:#3a342c;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.label}</div>
+      <div style="flex:1;height:16px;background:#f4efe7;border-radius:5px;overflow:hidden;"><div style="width:${Math.round(Math.abs(r.val) / mx * 100)}%;height:100%;background:${olapBarColor(mKey, r.val)};border-radius:5px;"></div></div>
+      <div style="width:78px;flex:none;font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:600;color:#211d17;text-align:right;">${olapFmt(r.val, mKey)}</div>
+    </div>`).join('')}</div>`;
 }
 
 // ---------- analyzer field model (stile Pentaho/Saiku) ----------
 const BI_FIELDS = {
   fatturato:  { type: 'measure', label: 'Fatturato' },
+  budget:     { type: 'measure', label: 'Budget' },
+  delta:      { type: 'measure', label: 'Δ vs budget' },
+  achiev:     { type: 'measure', label: '% su budget' },
   margine:    { type: 'measure', label: 'Margine €' },
   marginePct: { type: 'measure', label: 'Margine %' },
   qta:        { type: 'measure', label: 'Quantità' },
@@ -348,7 +405,7 @@ const BI_DIMS = [
   { name: 'Prodotto',  icon: '📦', levels: ['famiglia'] },
   { name: 'Tempo',     icon: '🕒', levels: ['trimestre', 'mese'] },
 ];
-const BI_MEAS = ['fatturato', 'margine', 'marginePct', 'qta', 'scaduto'];
+const BI_MEAS = ['fatturato', 'budget', 'delta', 'achiev', 'margine', 'marginePct', 'qta', 'scaduto'];
 
 function memberOrder(level) {
   if (level === 'mese') return OLAP_MESI.map(m => m.name);
@@ -1203,40 +1260,28 @@ function biScreen() {
   const footStyle = `padding:10px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:700;color:#211d17;border-top:2px solid #ece6dc;`;
   const tfoot = `<tr><td colspan="${leftCount}" style="${footStyle}text-align:left;font-family:'IBM Plex Sans',sans-serif;">Totale complessivo</td>${colGroups.map(g => meas.map(m => `<td style="${footStyle}text-align:right;">${olapFmt(g.isTotal ? olapAgg(facts, m) : olapAgg(facts.filter(r => matches(r, colLevels, g.ct)), m), m)}</td>`).join('')).join('')}</tr>`;
 
-  // ---- chart view: 4 grafici per analizzare il processo ----
+  // ---- chart view: 4 grafici di tipo diverso (barre, linea, ciambella, colonne) ----
   const m0 = meas[0];
-  const barList = (rows, mKey, labelW) => {
-    const data = rows.filter(r => Math.abs(r.val) > 0); // nascondi le voci senza dati
-    if (!data.length) return `<div style="font-size:12px;color:#a99e8d;padding:6px 0;">Nessun dato per la selezione corrente.</div>`;
-    const mx = Math.max(1, ...data.map(r => Math.abs(r.val)));
-    return data.map(r => `
-      <div style="display:flex;align-items:center;gap:10px;">
-        <div style="width:${labelW || 120}px;flex:none;font-size:11.5px;color:#3a342c;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.label}</div>
-        <div style="flex:1;height:16px;background:#f4efe7;border-radius:5px;overflow:hidden;"><div style="width:${Math.round(Math.abs(r.val) / mx * 100)}%;height:100%;background:${olapBarColor(mKey, r.val)};border-radius:5px;"></div></div>
-        <div style="width:74px;flex:none;font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:600;color:#211d17;text-align:right;">${olapFmt(r.val, mKey)}</div>
-      </div>`).join('');
-  };
+  const barList = chBars; // alias riutilizzato anche nel report
   const chartCard = (title, sub, inner) => `
     <div style="background:#fff;border:1px solid #e4ddd2;border-radius:12px;padding:15px 16px;">
       <div style="font-weight:600;font-size:13.5px;color:#211d17;">${title}</div>
       <div style="font-size:11px;color:#8a8073;margin-bottom:13px;">${sub}</div>
-      <div style="display:flex;flex-direction:column;gap:9px;">${inner}</div>
+      ${inner}
     </div>`;
-  // grafico 1: misura corrente per la dimensione di riga (o famiglia)
   const dimA = rowLevels[0] || 'famiglia';
   const rowsA = olapDistinct(facts, dimA).map(v => ({ label: v, val: olapAgg(facts.filter(r => r[dimA] === v), m0) })).sort((a, b) => Math.abs(b.val) - Math.abs(a.val)).slice(0, 8);
-  // grafico 2: fatturato per mese
-  const rowsB = OLAP_MESI.map(mm => ({ label: mm.name, val: olapAgg(facts.filter(r => r.mese === mm.name), 'fatturato') }));
-  // grafico 3: Italia vs Export (fatturato)
-  const rowsC = ['Italia', 'Export'].map(a => ({ label: a, val: olapAgg(facts.filter(r => r.area === a), 'fatturato') }));
-  // grafico 4: margine % per famiglia
-  const rowsD = OLAP_FAM.map(f => ({ label: f.name, val: olapAgg(facts.filter(r => r.famiglia === f.name), 'marginePct') })).sort((a, b) => b.val - a.val);
+  const rowsB = OLAP_MESI.map(mm => ({ label: mm.name, val: olapAgg(facts.filter(r => r.mese === mm.name), 'fatturato') }));      // fatturato/mese
+  const rowsBud = OLAP_MESI.map(mm => ({ label: mm.name, val: olapAgg(facts.filter(r => r.mese === mm.name), 'budget') }));      // budget/mese
+  const rowsC = ['Italia', 'Export'].map(a => ({ label: a, val: olapAgg(facts.filter(r => r.area === a), 'fatturato') }));        // quota area
+  const rowsD = OLAP_FAM.map(f => ({ label: f.name, val: olapAgg(facts.filter(r => r.famiglia === f.name), 'marginePct') })).sort((a, b) => b.val - a.val); // margine%
+  const rowsAch = OLAP_FAM.map(f => ({ label: f.name, val: olapAgg(facts.filter(r => r.famiglia === f.name), 'achiev') })).sort((a, b) => b.val - a.val); // % su budget
   const chartsHtml = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;">
-      ${chartCard(`${MEASURES[m0].label} per ${BI_FIELDS[dimA].label.toLowerCase()}`, 'classifica sulla selezione corrente', barList(rowsA, m0, 130))}
-      ${chartCard('Fatturato per mese', 'andamento gen → giu', barList(rowsB, 'fatturato', 44))}
-      ${chartCard('Italia vs Export', 'quota di fatturato', barList(rowsC, 'fatturato', 60))}
-      ${chartCard('Margine % per famiglia', 'redditività per linea di prodotto', barList(rowsD, 'marginePct', 130))}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+      ${chartCard(`${MEASURES[m0].label} per ${BI_FIELDS[dimA].label.toLowerCase()}`, 'classifica (barre) sulla selezione corrente', chBars(rowsA, m0, 130))}
+      ${chartCard('Fatturato vs Budget · per mese', '<span style="color:#1b4a93;font-weight:600;">consuntivo</span> vs <span style="color:#cab32e;font-weight:600;">budget</span> (grafico a linee)', chLine(rowsB, 'fatturato', rowsBud, 'budget'))}
+      ${chartCard('Italia vs Export', 'quota di fatturato (ciambella)', chDonut(rowsC, 'fatturato'))}
+      ${chartCard('% su budget per famiglia', 'raggiungimento target (colonne · verde ≥100%)', chColumns(rowsAch, 'achiev'))}
     </div>`;
 
   // ---- narrative ----
@@ -1309,10 +1354,10 @@ function biScreen() {
               <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">${rkpi(olapFmt(rkpiFat, 'fatturato'), 'Fatturato (selezione)', '#211d17')}${rkpi(olapFmt(rkpiMar, 'marginePct'), 'Margine medio', '#2e9e5f')}${rkpi(olapFmt(rkpiScad, 'scaduto'), 'Scaduto', '#d23b2c')}</div>
               <ul style="margin:0;padding-left:18px;font-size:13.5px;line-height:1.6;color:#3a342c;">${sumBullets}</ul>`)}
             ${sec('2', `Dettaglio per ${BI_FIELDS[dimA].label.toLowerCase()}`, `<div style="display:flex;flex-direction:column;gap:9px;">${barList(rowsA, m0, 150)}</div>`)}
-            ${sec('3', 'Andamento e redditività', `
+            ${sec('3', 'Consuntivo vs Budget e redditività', `
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;">
-                <div><div style="font-size:12px;font-weight:600;color:#211d17;margin-bottom:10px;">Fatturato per mese</div><div style="display:flex;flex-direction:column;gap:8px;">${barList(rowsB, 'fatturato', 40)}</div></div>
-                <div><div style="font-size:12px;font-weight:600;color:#211d17;margin-bottom:10px;">Margine % per famiglia</div><div style="display:flex;flex-direction:column;gap:8px;">${barList(rowsD, 'marginePct', 130)}</div></div>
+                <div><div style="font-size:12px;font-weight:600;color:#211d17;margin-bottom:4px;">Fatturato vs Budget · per mese</div><div style="font-size:10.5px;color:#8a8073;margin-bottom:8px;"><span style="color:#1b4a93;font-weight:600;">consuntivo</span> vs <span style="color:#cab32e;font-weight:600;">budget</span></div>${chLine(rowsB, 'fatturato', rowsBud, 'budget')}</div>
+                <div><div style="font-size:12px;font-weight:600;color:#211d17;margin-bottom:10px;">% su budget per famiglia</div>${chColumns(rowsAch, 'achiev')}</div>
               </div>`)}
             ${sec('4', 'Proposte di azione', `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;">${actionCards}</div>`)}
             <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:#a99e8d;margin:4px 0 10px;">Report correlati</div>
