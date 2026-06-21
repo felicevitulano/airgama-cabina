@@ -46,6 +46,7 @@ const App = {
     alarmFilter: 'tutti',
     openAlarm: null,
     openPanel: 'commerciale',
+    flowOpen: 'gestionale',
     bi: {
       rows: ['famiglia'],
       cols: [],
@@ -53,6 +54,7 @@ const App = {
       filters: {},
       openFilter: null,
       view: 'tabella',
+      reports: false,
     },
     toastMsg: '',
     toastShow: false,
@@ -117,6 +119,7 @@ const App = {
   },
 
   togglePanel(p) { this.set(s => ({ openPanel: s.openPanel === p ? null : p })); },
+  toggleFlow(f) { this.set(s => ({ flowOpen: s.flowOpen === f ? null : f })); },
 
   setAlarmFilter(f) { this.set({ alarmFilter: f }); },
   toggleAlarm(id) { this.set(s => ({ openAlarm: s.openAlarm === id ? null : id })); },
@@ -161,6 +164,7 @@ const App = {
   biSwapAxes() { this.set(s => ({ bi: { ...s.bi, rows: s.bi.cols, cols: s.bi.rows } })); },
   biClear() { this.set({ bi: { rows: [], cols: [], measures: ['fatturato'], filters: {}, openFilter: null, view: 'tabella' } }); },
   biView(v) { this.set(s => ({ bi: { ...s.bi, view: v } })); },
+  biToggleReports() { this.set(s => ({ bi: { ...s.bi, reports: !s.bi.reports } })); },
   biOpenFilter(level) { this.set(s => ({ bi: { ...s.bi, openFilter: s.bi.openFilter === level ? null : level } })); },
   biToggleMember(level, value) {
     this.set(s => {
@@ -502,6 +506,46 @@ function cabinaScreen(clock) {
         { label: 'Vedi insight', link: true, h: App.reg(() => App.go('bi')) },
       ],
     },
+    {
+      id: 'ritardi', sev: 'Attenzione', color: '#dfa000', glow: 'rgba(223,160,0,.16)', agent: 'Logistica',
+      title: 'Due spedizioni in ritardo',
+      body: '#SP-2025-0331 e #SP-2025-0334 sono oltre la data di consegna prevista.',
+      reading: 'Ritardo medio 1,5 giorni per saturazione del corriere sul Centro. Puntualità del mese ancora al 92%, ma due clienti vanno avvisati per non incrinare il rapporto.',
+      actions: [
+        { label: 'Avvisa i clienti', primary: true, h: App.reg(() => App.toast('Comunicazione di ritardo inviata ai clienti delle spedizioni #SP-2025-0331 e #SP-2025-0334, con nuova data stimata.')) },
+        { label: 'Apri picking', link: true, h: App.reg(() => App.go('picking')) },
+      ],
+    },
+    {
+      id: 'daunia', sev: 'Critico', color: '#d23b2c', glow: 'rgba(210,59,44,.16)', agent: 'Controllo crediti',
+      title: 'Costruzioni Daunia · scaduto in aumento',
+      body: '€ 8.500 di scaduto, in crescita: la fattura più vecchia ha superato i 60 giorni.',
+      reading: 'Cliente storico con rotazione lenta. Conviene un sollecito graduale prima di toccare il fido, mantenendo aperta la relazione commerciale.',
+      actions: [
+        { label: 'Invia sollecito', primary: true, h: App.reg(() => App.toast('Sollecito di pagamento inviato a Costruzioni Daunia per € 8.500, con piano di rientro proposto in 2 rate.')) },
+        { label: 'Vedi Amministrazione', link: true, h: App.reg(() => App.togglePanel('amministrazione')) },
+      ],
+    },
+    {
+      id: 'produzione', sev: 'Attenzione', color: '#dfa000', glow: 'rgba(223,160,0,.16)', agent: 'Produzione',
+      title: 'Linee di stampaggio al 78%',
+      body: 'Saturazione in salita con 8 lotti in coda: rischio colli di bottiglia sui raccordi.',
+      reading: 'C’è ancora capacità per anticipare il lotto del Raccordo ø110 sotto scorta ed evitare un fermo spedizioni nei prossimi giorni.',
+      actions: [
+        { label: 'Anticipa lotto ø110', primary: true, h: App.reg(() => App.toast('Lotto Raccordo PVC ø110 anticipato in produzione e segnalato a Marco Carluccio (Produzione).')) },
+        { label: 'Vedi il ciclo', link: true, h: App.reg(() => App.go('agentico')) },
+      ],
+    },
+    {
+      id: 'export', sev: 'Opportunità', color: '#1b4a93', glow: 'rgba(27,74,147,.16)', agent: 'Export',
+      title: 'Grecia in forte crescita',
+      body: 'Hellas Hydro: +18% di ordini nel trimestre, marginalità sopra la media export.',
+      reading: 'Trend solido sul drenaggio suolo. Una proposta di listino dedicato può consolidare il cliente e aumentare il valore medio d’ordine.',
+      actions: [
+        { label: 'Proponi listino dedicato', primary: true, h: App.reg(() => App.toast('Proposta di listino dedicato per Hellas Hydro preparata e inoltrata a Marco De Giovanni (Export).')) },
+        { label: 'Analizza in BI', link: true, h: App.reg(() => App.go('bi')) },
+      ],
+    },
   ];
 
   const sevMeta = {
@@ -678,25 +722,31 @@ function agenticoScreen() {
     </div>`).join('');
 
   // ---- pipeline del ciclo dell'ordine ----
+  const fo = App.state.flowOpen;
   const stages = [
-    { ic: '🧾', label: 'Gestionale', kpi: '37', sub: 'ordini oggi', dot: '#2e9e5f' },
-    { ic: '🛡️', label: 'Controllo crediti', kpi: '1', sub: 'bloccato', dot: '#d23b2c', gate: true },
-    { ic: '🏭', label: 'Produzione', kpi: '8', sub: 'in lavorazione', dot: '#2e9e5f' },
-    { ic: '📦', label: 'Magazzino', kpi: '12', sub: 'in preparazione', dot: '#dfa000' },
-    { ic: '🚚', label: 'Spedizione', kpi: '5', sub: 'in transito', dot: '#2e9e5f' },
-    { ic: '🧮', label: 'Fatturazione', kpi: '24', sub: 'emesse', dot: '#2e9e5f' },
-    { ic: '💶', label: 'Incasso', kpi: '€ 218k', sub: 'scaduto € 47,8k', dot: '#dfa000' },
+    { id: 'gestionale', ic: '🧾', label: 'Gestionale', kpi: '37', sub: 'ordini oggi', dot: '#2e9e5f' },
+    { id: 'crediti', ic: '🛡️', label: 'Controllo crediti', kpi: '1', sub: 'bloccato', dot: '#d23b2c', gate: true },
+    { id: 'produzione', ic: '🏭', label: 'Produzione', kpi: '8', sub: 'in lavorazione', dot: '#2e9e5f' },
+    { id: 'magazzino', ic: '📦', label: 'Magazzino', kpi: '12', sub: 'in preparazione', dot: '#dfa000' },
+    { id: 'spedizione', ic: '🚚', label: 'Spedizione', kpi: '5', sub: 'in transito', dot: '#2e9e5f' },
+    { id: 'fatturazione', ic: '🧮', label: 'Fatturazione', kpi: '24', sub: 'emesse', dot: '#2e9e5f' },
+    { id: 'incasso', ic: '💶', label: 'Incasso', kpi: '€ 218k', sub: 'scaduto € 47,8k', dot: '#dfa000' },
   ];
-  const node = s => `
-    <div style="flex:none;width:104px;text-align:center;">
-      <div style="width:56px;height:56px;margin:0 auto;border-radius:15px;background:${s.gate ? '#16213f' : '#fff'};border:1.5px solid ${s.gate ? '#1b4a93' : '#e4ddd2'};display:flex;align-items:center;justify-content:center;font-size:23px;position:relative;box-shadow:${s.gate ? '0 6px 18px -6px rgba(27,74,147,.5)' : '0 1px 2px rgba(33,29,23,.05)'};">
+  const node = s => {
+    const active = fo === s.id;
+    const bd = active ? '#1b4a93' : (s.gate ? '#1b4a93' : '#e4ddd2');
+    const sh = active ? '0 0 0 3px rgba(27,74,147,.18)' : (s.gate ? '0 6px 18px -6px rgba(27,74,147,.5)' : '0 1px 2px rgba(33,29,23,.05)');
+    return `
+    <div data-h="${App.reg(() => App.toggleFlow(s.id))}" title="Apri la sintesi del sistema" style="flex:none;width:104px;text-align:center;cursor:pointer;">
+      <div style="width:56px;height:56px;margin:0 auto;border-radius:15px;background:${s.gate ? '#16213f' : '#fff'};border:1.5px solid ${bd};box-shadow:${sh};display:flex;align-items:center;justify-content:center;font-size:23px;position:relative;transition:box-shadow .15s,border-color .15s;">
         ${s.ic}
         <span style="position:absolute;top:-4px;right:-4px;width:11px;height:11px;border-radius:50%;background:${s.dot};border:2px solid #fbf9f5;${s.gate ? 'animation:agpulse 1.5s infinite;' : ''}"></span>
       </div>
-      <div style="font-size:11px;font-weight:700;color:#211d17;margin-top:9px;line-height:1.2;">${s.label}</div>
+      <div style="font-size:11px;font-weight:700;color:${active ? '#1b4a93' : '#211d17'};margin-top:9px;line-height:1.2;">${s.label}</div>
       <div style="font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;color:#211d17;margin-top:3px;">${s.kpi}</div>
       <div style="font-size:10px;color:#8a8073;">${s.sub}</div>
     </div>`;
+  };
   const connector = `
     <div style="position:relative;height:2px;background:#e4ddd2;flex:1;min-width:24px;margin-top:36px;overflow:hidden;">
       <span style="position:absolute;top:-2.5px;width:7px;height:7px;border-radius:50%;background:#1b4a93;animation:agflow 2.6s linear infinite;"></span>
@@ -704,6 +754,75 @@ function agenticoScreen() {
       <span style="position:absolute;top:-2.5px;width:7px;height:7px;border-radius:50%;background:#1b4a93;animation:agflow 2.6s linear infinite;animation-delay:1.8s;"></span>
     </div>`;
   const flow = stages.map((s, i) => node(s) + (i < stages.length - 1 ? connector : '')).join('');
+
+  // ---- sintesi per sistema (drill-down al click sul nodo) ----
+  const FLOW_DETAIL = {
+    gestionale: {
+      title: 'Gestionale · ordini in entrata', accent: '#2e9e5f',
+      kpis: [{ v: '37', l: 'Ordini oggi', c: '#211d17' }, { v: '€ 84,2k', l: 'Valore ordini', c: '#211d17' }, { v: '+12%', l: 'vs ieri', c: '#2e9e5f' }, { v: '3', l: 'Da confermare', c: '#dfa000' }],
+      themes: ['Ordini per canale: 24 agenti · 9 web · 4 telefono', 'Ticket medio € 2.275 · 5 ordini sopra € 5k', 'Andamento settimana: +8% sul valore ordinato'],
+      narr: 'Oggi sono entrati 37 ordini per € 84,2k, in crescita del 12% su ieri. Tre attendono conferma e uno è già stato fermato dal controllo crediti. Il ticket medio è in linea con il mese.',
+    },
+    crediti: {
+      title: 'Controllo crediti · presidio dell’agente', accent: '#d23b2c',
+      kpis: [{ v: '1', l: 'Ordine bloccato', c: '#d23b2c' }, { v: '€ 30,8k', l: 'Esposizione a rischio', c: '#d23b2c' }, { v: '3', l: 'Clienti oltre fido', c: '#dfa000' }, { v: '58 gg', l: 'DSO medio', c: '#211d17' }],
+      themes: ['Regola: blocco automatico su scaduto > € 10k o oltre fido', 'Caso aperto: Edilsud Costruzioni · € 18.500', 'Storico: il 92% degli ordini passa senza intervento'],
+      narr: 'Ho fermato 1 ordine prima della produzione: Edilsud è oltre fido con € 12.300 di scaduto. È l’unico varco dove intervengo oggi; gli altri ordini procedono. Trovi il caso completo qui sotto.',
+    },
+    produzione: {
+      title: 'Produzione · avanzamento lotti', accent: '#2e9e5f',
+      kpis: [{ v: '8', l: 'In lavorazione', c: '#211d17' }, { v: '5', l: 'Completati oggi', c: '#2e9e5f' }, { v: '2,4 gg', l: 'Lead time medio', c: '#211d17' }, { v: '78%', l: 'Saturazione linee', c: '#dfa000' }],
+      themes: ['Linee attive: stampaggio PVC, PP, assemblaggio', 'Coda: 8 lotti · priorità ai raccordi ø110', 'Scarti di processo 1,8% (sotto soglia 3%)'],
+      narr: 'Otto lotti in lavorazione e cinque completati oggi, lead time medio 2,4 giorni. Le linee sono al 78%: c’è margine per anticipare il riordino dei raccordi ø110 sotto scorta.',
+    },
+    magazzino: {
+      title: 'Magazzino · scorte e preparazione', accent: '#dfa000',
+      kpis: [{ v: '12', l: 'Spedizioni in prep.', c: '#211d17' }, { v: '6', l: 'Codici sotto scorta', c: '#d23b2c' }, { v: '5,4x', l: 'Rotazione', c: '#211d17' }, { v: '94%', l: 'Accuratezza picking', c: '#2e9e5f' }],
+      themes: ['Sotto scorta critico: Raccordo PVC ø110 (4 gg)', 'Picking attivo: #SP-2025-0337 · Idrotermica Salento', 'Rotazione lenta: valvole anti-riflusso (capitale fermo)'],
+      narr: 'Dodici spedizioni in preparazione e sei codici sotto scorta, il più critico il raccordo ø110. L’accuratezza del picking è al 94%: ogni prelievo aggiorna le giacenze in tempo reale.',
+      go: { screen: 'picking', label: 'Apri l’app picking' },
+    },
+    spedizione: {
+      title: 'Spedizione · consegne in corso', accent: '#2e9e5f',
+      kpis: [{ v: '5', l: 'In transito', c: '#211d17' }, { v: '2', l: 'In ritardo', c: '#dfa000' }, { v: '92%', l: 'On-time', c: '#2e9e5f' }, { v: '1,8 gg', l: 'Consegna media', c: '#211d17' }],
+      themes: ['Corrieri: 3 spedizioni Sud · 2 Centro', 'In ritardo: #SP-2025-0331 e #SP-2025-0334', 'Resi/contestazioni: 0 questa settimana'],
+      narr: 'Cinque spedizioni in transito, due in ritardo sulla data prevista. La puntualità resta al 92% con consegna media di 1,8 giorni.',
+    },
+    fatturazione: {
+      title: 'Fatturazione · ciclo attivo', accent: '#2e9e5f',
+      kpis: [{ v: '24', l: 'Fatture emesse', c: '#211d17' }, { v: '€ 128k', l: 'Fatturato oggi', c: '#211d17' }, { v: '2', l: 'Da emettere', c: '#dfa000' }, { v: '0', l: 'Note di credito', c: '#2e9e5f' }],
+      themes: ['Emissione automatica alla conferma spedizione', 'Split payment: 6 fatture verso PA', 'Tempo medio ordine→fattura: 3,1 giorni'],
+      narr: 'Ventiquattro fatture emesse oggi per € 128k, due ancora da emettere a valle delle spedizioni. Il ciclo ordine→fattura è sceso a 3,1 giorni.',
+    },
+    incasso: {
+      title: 'Incasso · cassa e crediti', accent: '#dfa000',
+      kpis: [{ v: '€ 218k', l: 'Incassato (mese)', c: '#2e9e5f' }, { v: '€ 47,8k', l: 'Scaduto', c: '#d23b2c' }, { v: '58 gg', l: 'DSO', c: '#211d17' }, { v: '3', l: 'Clienti oltre fido', c: '#dfa000' }],
+      themes: ['Scaduto in crescita: +31% da marzo', 'Top scaduto: Edilsud € 12,3k · Daunia € 8,5k', 'Solleciti automatici pronti per 4 posizioni'],
+      narr: 'La cassa del mese è positiva (€ 218k incassati) ma lo scaduto è salito a € 47,8k, +31% da marzo. Conviene agire sui crediti più vecchi prima che pesino sulla liquidità.',
+      go: { screen: 'cabina', label: 'Apri la Cabina di regia' },
+    },
+  };
+  let flowPanel = '';
+  if (fo && FLOW_DETAIL[fo]) {
+    const d = FLOW_DETAIL[fo];
+    const kpiHtml = d.kpis.map(k => `<div style="flex:1;min-width:120px;background:#fff;border:1px solid #e4ddd2;border-radius:11px;padding:12px 13px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600;color:${k.c};line-height:1;">${k.v}</div><div style="font-size:10.5px;color:#8a8073;margin-top:5px;">${k.l}</div></div>`).join('');
+    const themesHtml = d.themes.map(t => `<div style="display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-bottom:1px solid #f4efe7;"><span style="width:6px;height:6px;border-radius:50%;background:${d.accent};margin-top:6px;flex:none;"></span><span style="font-size:12.5px;color:#5a5247;line-height:1.45;">${t}</span></div>`).join('');
+    flowPanel = `
+      <div style="margin-top:16px;background:#fff;border:1px solid #e4ddd2;border-left:4px solid ${d.accent};border-radius:12px;padding:16px 18px;">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
+          <h3 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;color:#211d17;margin:0;">${d.title}</h3>
+          <button data-h="${App.reg(() => App.toggleFlow(fo))}" style="margin-left:auto;appearance:none;cursor:pointer;border:none;background:none;color:#a99e8d;font-size:18px;line-height:1;padding:0;">×</button>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">${kpiHtml}</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:#a99e8d;margin-bottom:4px;">Temi del sistema</div>
+        <div style="margin-bottom:13px;">${themesHtml}</div>
+        <div style="display:flex;gap:10px;background:#16213f;border-radius:10px;padding:12px 14px;${d.go ? 'margin-bottom:13px;' : ''}">
+          <span style="width:22px;height:22px;border-radius:6px;background:#1b4a93;color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:10px;display:flex;align-items:center;justify-content:center;flex:none;">AI</span>
+          <div style="font-size:12.5px;color:#cfc8bd;line-height:1.5;">${d.narr}</div>
+        </div>
+        ${d.go ? `<button data-h="${App.reg(() => App.go(d.go.screen))}" style="appearance:none;cursor:pointer;border:1px solid #e4ddd2;background:#fff;color:#1b4a93;font-family:'IBM Plex Sans',sans-serif;font-weight:600;font-size:12.5px;padding:9px 14px;border-radius:9px;">${d.go.label} →</button>` : ''}
+      </div>`;
+  }
 
   return `
   <div style="max-width:1180px;margin:0 auto;padding:24px;">
@@ -716,15 +835,16 @@ function agenticoScreen() {
 
     <!-- flow pipeline -->
     <div style="background:#fbf9f5;border:1px solid #e4ddd2;border-radius:16px;padding:20px 22px;box-shadow:0 1px 2px rgba(33,29,23,.04);">
-      <div style="display:flex;align-items:center;gap:9px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:16px;flex-wrap:wrap;">
         <span style="width:8px;height:8px;border-radius:50%;background:#2e9e5f;box-shadow:0 0 0 3px #e4f2e9;animation:agpulse 2.6s infinite;"></span>
         <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#8a8073;">Flusso in tempo reale · gestionale · MES · contabilità</span>
+        <span style="margin-left:auto;font-size:11.5px;color:#8a8073;">Tocca un sistema per la sintesi e il dettaglio</span>
       </div>
       <div style="overflow-x:auto;padding-bottom:4px;"><div style="display:flex;align-items:flex-start;min-width:780px;">${flow}</div></div>
-      <div style="margin-top:16px;display:flex;align-items:flex-start;gap:10px;background:#16213f;border-radius:11px;padding:12px 14px;">
+      ${flowPanel || `<div style="margin-top:16px;display:flex;align-items:flex-start;gap:10px;background:#16213f;border-radius:11px;padding:12px 14px;">
         <span style="width:22px;height:22px;border-radius:6px;background:#1b4a93;color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:10px;display:flex;align-items:center;justify-content:center;flex:none;">AI</span>
         <div style="font-size:12.5px;color:#cfc8bd;line-height:1.5;">Sto presidiando il varco <strong style="color:#fff;">Controllo crediti</strong>: un ordine è fermo prima della produzione perché collego il dato commerciale e quello amministrativo. Gli altri 36 ordini di oggi fluiscono regolari verso fatturazione e incasso.</div>
-      </div>
+      </div>`}
     </div>
 
     <!-- intervention -->
@@ -1071,8 +1191,11 @@ function biScreen() {
       ? rowLevels.map((l, i) => `<td style="${tdLabelB}${bd}${i < rowLevels.length - 1 ? 'color:#8a8073;font-weight:600;' : ''}">${changedAt(i) ? rt[i] : ''}</td>`).join('')
       : `<td style="${tdLabelB}${bd}">Totale</td>`;
     const vals = colGroups.map(g => meas.map(m => {
-      const v = g.isTotal ? olapAgg(facts.filter(r => matches(r, rowLevels, rt)), m) : olapAgg(facts.filter(r => matches(r, rowLevels, rt) && matches(r, colLevels, g.ct)), m);
-      return `<td style="${tdNumB}${bd}${g.isTotal ? 'font-weight:600;color:#211d17;' : ''}">${olapFmt(v, m)}</td>`;
+      const subset = facts.filter(r => matches(r, rowLevels, rt) && (g.isTotal ? true : matches(r, colLevels, g.ct)));
+      const M = MEASURES[m];
+      const empty = !subset.length || (M.kind === 'pct' ? subset.reduce((a, r) => a + r[M.den], 0) === 0 : olapAgg(subset, m) === 0);
+      if (empty) return `<td style="${tdNumB}${bd}color:#cbc3b6;text-align:right;">–</td>`;
+      return `<td style="${tdNumB}${bd}${g.isTotal ? 'font-weight:600;color:#211d17;' : ''}">${olapFmt(olapAgg(subset, m), m)}</td>`;
     }).join('')).join('');
     return `<tr class="olap-row">${left}${vals}</tr>`;
   }).join('');
@@ -1080,23 +1203,80 @@ function biScreen() {
   const footStyle = `padding:10px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:700;color:#211d17;border-top:2px solid #ece6dc;`;
   const tfoot = `<tr><td colspan="${leftCount}" style="${footStyle}text-align:left;font-family:'IBM Plex Sans',sans-serif;">Totale complessivo</td>${colGroups.map(g => meas.map(m => `<td style="${footStyle}text-align:right;">${olapFmt(g.isTotal ? olapAgg(facts, m) : olapAgg(facts.filter(r => matches(r, colLevels, g.ct)), m), m)}</td>`).join('')).join('')}</tr>`;
 
-  // ---- chart view ----
+  // ---- chart view: 4 grafici per analizzare il processo ----
   const m0 = meas[0];
-  const chartRows = rowTuples.map(rt => ({ label: rt.length ? rt.join(' / ') : 'Totale', val: olapAgg(facts.filter(r => matches(r, rowLevels, rt)), m0) }))
-    .sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
-  const chartMax = Math.max(1, ...chartRows.map(r => Math.abs(r.val)));
-  const chartHtml = chartRows.map(r => `
-    <div style="display:flex;align-items:center;gap:12px;">
-      <div style="width:190px;flex:none;font-size:12px;color:#3a342c;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.label}</div>
-      <div style="flex:1;height:20px;background:#f4efe7;border-radius:6px;overflow:hidden;"><div style="width:${Math.round(Math.abs(r.val) / chartMax * 100)}%;height:100%;background:${olapBarColor(m0, r.val)};border-radius:6px;"></div></div>
-      <div style="width:80px;flex:none;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:#211d17;text-align:right;">${olapFmt(r.val, m0)}</div>
-    </div>`).join('');
+  const barList = (rows, mKey, labelW) => {
+    const data = rows.filter(r => Math.abs(r.val) > 0); // nascondi le voci senza dati
+    if (!data.length) return `<div style="font-size:12px;color:#a99e8d;padding:6px 0;">Nessun dato per la selezione corrente.</div>`;
+    const mx = Math.max(1, ...data.map(r => Math.abs(r.val)));
+    return data.map(r => `
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:${labelW || 120}px;flex:none;font-size:11.5px;color:#3a342c;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.label}</div>
+        <div style="flex:1;height:16px;background:#f4efe7;border-radius:5px;overflow:hidden;"><div style="width:${Math.round(Math.abs(r.val) / mx * 100)}%;height:100%;background:${olapBarColor(mKey, r.val)};border-radius:5px;"></div></div>
+        <div style="width:74px;flex:none;font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:600;color:#211d17;text-align:right;">${olapFmt(r.val, mKey)}</div>
+      </div>`).join('');
+  };
+  const chartCard = (title, sub, inner) => `
+    <div style="background:#fff;border:1px solid #e4ddd2;border-radius:12px;padding:15px 16px;">
+      <div style="font-weight:600;font-size:13.5px;color:#211d17;">${title}</div>
+      <div style="font-size:11px;color:#8a8073;margin-bottom:13px;">${sub}</div>
+      <div style="display:flex;flex-direction:column;gap:9px;">${inner}</div>
+    </div>`;
+  // grafico 1: misura corrente per la dimensione di riga (o famiglia)
+  const dimA = rowLevels[0] || 'famiglia';
+  const rowsA = olapDistinct(facts, dimA).map(v => ({ label: v, val: olapAgg(facts.filter(r => r[dimA] === v), m0) })).sort((a, b) => Math.abs(b.val) - Math.abs(a.val)).slice(0, 8);
+  // grafico 2: fatturato per mese
+  const rowsB = OLAP_MESI.map(mm => ({ label: mm.name, val: olapAgg(facts.filter(r => r.mese === mm.name), 'fatturato') }));
+  // grafico 3: Italia vs Export (fatturato)
+  const rowsC = ['Italia', 'Export'].map(a => ({ label: a, val: olapAgg(facts.filter(r => r.area === a), 'fatturato') }));
+  // grafico 4: margine % per famiglia
+  const rowsD = OLAP_FAM.map(f => ({ label: f.name, val: olapAgg(facts.filter(r => r.famiglia === f.name), 'marginePct') })).sort((a, b) => b.val - a.val);
+  const chartsHtml = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;">
+      ${chartCard(`${MEASURES[m0].label} per ${BI_FIELDS[dimA].label.toLowerCase()}`, 'classifica sulla selezione corrente', barList(rowsA, m0, 130))}
+      ${chartCard('Fatturato per mese', 'andamento gen → giu', barList(rowsB, 'fatturato', 44))}
+      ${chartCard('Italia vs Export', 'quota di fatturato', barList(rowsC, 'fatturato', 60))}
+      ${chartCard('Margine % per famiglia', 'redditività per linea di prodotto', barList(rowsD, 'marginePct', 130))}
+    </div>`;
 
   // ---- narrative ----
   const nar = biNarrative(B, facts, rowLevels, colLevels, meas);
   const narBullets = nar.bullets.map(b => `<li style="margin-bottom:7px;">${b}</li>`).join('');
-  const reportH = App.reg(() => App.toast(`Report «${nar.headline}» generato e condiviso con Gaetano Carluccio e Barbara Carluccio. Esportato in PDF e salvato tra le analisi.`));
-  const promoH = App.reg(() => { App.biPreset({ rows: ['cliente'], cols: [], measures: ['fatturato', 'marginePct'], filters: { famiglia: ['Valvole anti-riflusso'] }, openFilter: null }); App.toast('Analisi focalizzata sulle Valvole anti-riflusso per cliente — base pronta per la promo mirata Centro-Sud.'); });
+  const reportH = App.reg(() => App.toast(`Report «${nar.headline}» inviato a Gaetano Carluccio e Barbara Carluccio (PDF) e salvato tra le analisi.`));
+  const approfH = App.reg(() => App.biToggleReports());
+
+  // esempi di report di dettaglio (compaiono al click su "Approfondisci")
+  const REPORTS = [
+    { t: 'Marginalità Valvole anti-riflusso per cliente', tag: 'PDF', d: 'Margine % e volumi per i top 10 clienti, con focus Centro-Sud per la promo mirata.', meta: '6 pagine · agg. 20/06' },
+    { t: 'Rotazione di magazzino per famiglia · Q1–Q2', tag: 'XLSX', d: 'Indice di rotazione e giorni di copertura per linea, capitale immobilizzato.', meta: '12 fogli · agg. 20/06' },
+    { t: 'Scaduto e DSO per cliente', tag: 'PDF', d: 'Aging del credito, clienti oltre fido e piano solleciti suggerito dall’agente.', meta: '4 pagine · agg. 20/06' },
+    { t: 'Italia vs Export per trimestre', tag: 'PDF', d: 'Quota e crescita per area e famiglia, con scostamento sull’obiettivo annuo.', meta: '5 pagine · agg. 20/06' },
+  ];
+  let reportsPanel = '';
+  if (B.reports) {
+    const cards = REPORTS.map(r => `
+      <div style="background:#fff;border:1px solid #e4ddd2;border-radius:11px;padding:14px 15px;display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;align-items:flex-start;gap:8px;">
+          <span style="flex:1;font-weight:600;font-size:13px;color:#211d17;line-height:1.3;">${r.t}</span>
+          <span style="flex:none;font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:700;color:#1b4a93;background:#eef2fb;border:1px solid #cdd8f0;border-radius:6px;padding:2px 6px;">${r.tag}</span>
+        </div>
+        <div style="font-size:11.5px;color:#6a6155;line-height:1.45;">${r.d}</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:2px;">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#a99e8d;flex:1;">${r.meta}</span>
+          <button data-h="${App.reg(() => App.toast('Report «' + r.t + '» aperto in anteprima (esempio dimostrativo).'))}" style="appearance:none;cursor:pointer;border:1px solid #e4ddd2;background:#fff;color:#1b4a93;font-size:11.5px;font-weight:600;padding:6px 11px;border-radius:8px;">Apri</button>
+        </div>
+      </div>`).join('');
+    reportsPanel = `
+      <div style="margin-top:16px;background:#fbf9f5;border:1px solid #e4ddd2;border-radius:14px;padding:16px 18px;">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px;">
+          <span style="width:22px;height:22px;border-radius:6px;background:#16213f;color:#6f8fd8;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:10px;display:flex;align-items:center;justify-content:center;flex:none;">AI</span>
+          <h3 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;color:#211d17;margin:0;">Report di dettaglio disponibili</h3>
+          <button data-h="${approfH}" style="margin-left:auto;appearance:none;cursor:pointer;border:none;background:none;color:#a99e8d;font-size:18px;line-height:1;padding:0;">×</button>
+        </div>
+        <div style="font-size:11.5px;color:#8a8073;margin-bottom:14px;">Esempi generati dall’agente sui dati del cubo — pronti da aprire o condividere.</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">${cards}</div>
+      </div>`;
+  }
 
   // ---- view toggle / toolbar ----
   const tbtn = (active) => `appearance:none;cursor:pointer;border:1px solid ${active ? '#16213f' : '#e4ddd2'};background:${active ? '#16213f' : '#fff'};color:${active ? '#fff' : '#5a5247'};font-size:12px;font-weight:600;padding:7px 12px;border-radius:8px;`;
@@ -1138,7 +1318,7 @@ function biScreen() {
           <button data-h="${App.reg(() => App.biView('grafico'))}" style="${tbtn(B.view === 'grafico')}">▭ Grafico</button>
           <button data-h="${App.reg(() => App.biSwapAxes())}" style="appearance:none;cursor:pointer;border:1px solid #e4ddd2;background:#fff;color:#5a5247;font-size:12px;font-weight:600;padding:7px 12px;border-radius:8px;">⇄ Inverti assi</button>
           <button data-h="${App.reg(() => App.biClear())}" style="appearance:none;cursor:pointer;border:1px solid #e4ddd2;background:#fff;color:#5a5247;font-size:12px;font-weight:600;padding:7px 12px;border-radius:8px;">Pulisci</button>
-          <button data-h="${reportH}" style="appearance:none;cursor:pointer;margin-left:auto;border:none;background:#1b4a93;color:#fff;font-size:12.5px;font-weight:600;padding:8px 13px;border-radius:8px;">Genera report narrato →</button>
+          <button data-h="${reportH}" style="appearance:none;cursor:pointer;margin-left:auto;border:none;background:#1b4a93;color:#fff;font-size:12.5px;font-weight:600;padding:8px 13px;border-radius:8px;">Invia report →</button>
         </div>
 
         <!-- drop zones -->
@@ -1156,8 +1336,9 @@ function biScreen() {
         <div style="background:#fff;border:1px solid #e4ddd2;border-radius:14px;padding:18px 20px 20px;box-shadow:0 1px 2px rgba(33,29,23,.04);">
           ${B.view === 'tabella'
             ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;"><thead>${thead}</thead><tbody>${tbody}</tbody><tfoot>${tfoot}</tfoot></table></div>`
-            : `<div style="font-weight:600;font-size:14px;color:#211d17;margin-bottom:4px;">${MEASURES[m0].label} · ${rowLevels.length ? BI_FIELDS[rowLevels[0]].label.toLowerCase() : 'totale'}</div><div style="font-size:11.5px;color:#8a8073;margin-bottom:16px;">vista grafico</div><div style="display:flex;flex-direction:column;gap:11px;">${chartHtml}</div>`}
+            : `<div style="font-weight:600;font-size:14px;color:#211d17;margin-bottom:4px;">Analisi grafica del processo</div><div style="font-size:11.5px;color:#8a8073;margin-bottom:16px;">quattro viste a confronto sulla selezione corrente</div>${chartsHtml}`}
         </div>
+        ${reportsPanel}
       </div>
 
       <!-- agent narrative -->
@@ -1166,7 +1347,7 @@ function biScreen() {
         <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;position:relative;"><span style="width:24px;height:24px;border-radius:6px;background:#1b4a93;color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;">AI</span><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:#6f8fd8;font-weight:600;">Report narrato dall'agente</span></div>
         <h3 style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:17px;color:#fff;margin:0 0 12px;line-height:1.3;position:relative;">${nar.headline}</h3>
         <ul style="margin:0 0 14px;padding-left:18px;font-size:13px;line-height:1.55;color:#cfc8bd;position:relative;">${narBullets}</ul>
-        <button data-h="${promoH}" style="appearance:none;cursor:pointer;width:100%;border:none;background:#1b4a93;color:#fff;font-family:'IBM Plex Sans',sans-serif;font-weight:600;font-size:12.5px;padding:10px;border-radius:9px;position:relative;">Approfondisci: Valvole anti-riflusso →</button>
+        <button data-h="${approfH}" style="appearance:none;cursor:pointer;width:100%;border:none;background:${B.reports ? '#28335c' : '#1b4a93'};color:#fff;font-family:'IBM Plex Sans',sans-serif;font-weight:600;font-size:12.5px;padding:10px;border-radius:9px;position:relative;">${B.reports ? 'Nascondi report di dettaglio' : 'Approfondisci →'}</button>
         <div style="margin-top:11px;font-size:10.5px;color:#8a8073;line-height:1.5;position:relative;">La narrazione si aggiorna a ogni modifica dell'analisi · l'agente propone, la decisione resta a te.</div>
       </div>
     </div>
