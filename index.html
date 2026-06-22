@@ -47,6 +47,7 @@ const App = {
     openAlarm: null,
     openPanel: 'commerciale',
     flowOpen: 'gestionale',
+    flowKpi: null,
     bi: {
       rows: ['famiglia'],
       cols: [],
@@ -119,7 +120,8 @@ const App = {
   },
 
   togglePanel(p) { this.set(s => ({ openPanel: s.openPanel === p ? null : p })); },
-  toggleFlow(f) { this.set(s => ({ flowOpen: s.flowOpen === f ? null : f })); },
+  toggleFlow(f) { this.set(s => ({ flowOpen: s.flowOpen === f ? null : f, flowKpi: null })); },
+  toggleFlowKpi(k) { this.set(s => ({ flowKpi: s.flowKpi === k ? null : k })); },
 
   setAlarmFilter(f) { this.set({ alarmFilter: f }); },
   toggleAlarm(id) { this.set(s => ({ openAlarm: s.openAlarm === id ? null : id })); },
@@ -824,44 +826,79 @@ function agenticoScreen() {
   const FLOW_DETAIL = {
     gestionale: {
       title: 'Gestionale · ordini in entrata', accent: '#2e9e5f',
-      kpis: [{ v: '37', l: 'Ordini oggi', c: '#211d17' }, { v: '€ 84,2k', l: 'Valore ordini', c: '#211d17' }, { v: '+12%', l: 'vs ieri', c: '#2e9e5f' }, { v: '3', l: 'Da confermare', c: '#dfa000' }],
+      kpis: [
+        { v: '37', l: 'Ordini oggi', c: '#211d17', dt: { head: ['Ordine', 'Cliente', 'Importo', 'Stato'], rows: [['OC 1/000488', 'Edilsud Costruzioni', '€ 18.500', 'Bloccato'], ['OC 1/000487', 'Idrotermica Salento', '€ 6.240', 'Confermato'], ['OC 1/000486', 'Edil Murge', '€ 4.180', 'Confermato'], ['OC 1/000485', 'Termoidraulica Adriatica', '€ 3.020', 'Da confermare']], note: '…e altri 33 ordini oggi' } },
+        { v: '€ 84,2k', l: 'Valore ordini', c: '#211d17', dt: { head: ['Canale', 'Valore', 'Quota'], rows: [['Agenti', '€ 58,1k', '69%'], ['Web (e-commerce)', '€ 18,4k', '22%'], ['Telefono / mail', '€ 7,7k', '9%']] } },
+        { v: '+12%', l: 'vs ieri', c: '#2e9e5f', dt: { head: ['Giorno', 'Ordini', 'Valore'], rows: [['Martedì', '31', '€ 71,0k'], ['Mercoledì', '34', '€ 76,3k'], ['Giovedì (oggi)', '37', '€ 84,2k']] } },
+        { v: '3', l: 'Da confermare', c: '#dfa000', dt: { head: ['Ordine', 'Cliente', 'Motivo'], rows: [['OC 1/000485', 'Termoidraulica Adriatica', 'Verifica prezzo'], ['OC 1/000483', 'Idraulica Jonica', 'Attesa disponibilità ø110'], ['OC 1/000480', 'Edil Salento Group', 'Conferma fido']] } },
+      ],
       themes: ['Ordini per canale: 24 agenti · 9 web · 4 telefono', 'Ticket medio € 2.275 · 5 ordini sopra € 5k', 'Andamento settimana: +8% sul valore ordinato'],
       narr: 'Oggi sono entrati 37 ordini per € 84,2k, in crescita del 12% su ieri. Tre attendono conferma e uno è già stato fermato dal controllo crediti. Il ticket medio è in linea con il mese.',
     },
     crediti: {
       title: 'Controllo crediti · presidio dell’agente', accent: '#d23b2c',
-      kpis: [{ v: '1', l: 'Ordine bloccato', c: '#d23b2c' }, { v: '€ 30,8k', l: 'Esposizione a rischio', c: '#d23b2c' }, { v: '3', l: 'Clienti oltre fido', c: '#dfa000' }, { v: '58 gg', l: 'DSO medio', c: '#211d17' }],
+      kpis: [
+        { v: '1', l: 'Ordine bloccato', c: '#d23b2c', dt: { head: ['Ordine', 'Cliente', 'Esposizione', 'Regola'], rows: [['OC 1/000488', 'Edilsud Costruzioni', '€ 30.800', 'Oltre fido + scaduto']] } },
+        { v: '€ 30,8k', l: 'Esposizione a rischio', c: '#d23b2c', dt: { head: ['Componente castelletto', 'Importo'], rows: [['Scaduto', '€ 12.300'], ['Ordini in corso', '€ 6.400'], ['Da incassare', '€ 12.100'], ['Fido concesso', '− € 15.000']], note: 'Sforamento € 15.800 (+105% sul fido)' } },
+        { v: '3', l: 'Clienti oltre fido', c: '#dfa000', dt: { head: ['Cliente', 'Fido', 'Esposizione'], rows: [['Edilsud Costruzioni', '€ 15.000', '€ 30.800'], ['Costruzioni Daunia', '€ 20.000', '€ 22.400'], ['Idraulica Jonica', '€ 10.000', '€ 11.200']] } },
+        { v: '58 gg', l: 'DSO medio', c: '#211d17', dt: { head: ['Area', 'DSO'], rows: [['Italia', '55 gg'], ['Export', '64 gg'], ['Media', '58 gg (+6 da marzo)']] } },
+      ],
       themes: ['Regola: blocco automatico su scaduto > € 10k o oltre fido', 'Caso aperto: Edilsud Costruzioni · € 18.500', 'Storico: il 92% degli ordini passa senza intervento'],
       narr: 'Ho fermato 1 ordine prima della produzione: Edilsud è oltre fido con € 12.300 di scaduto. È l’unico varco dove intervengo oggi; gli altri ordini procedono. Trovi il caso completo qui sotto.',
     },
     produzione: {
       title: 'Produzione · avanzamento lotti', accent: '#2e9e5f',
-      kpis: [{ v: '8', l: 'In lavorazione', c: '#211d17' }, { v: '5', l: 'Completati oggi', c: '#2e9e5f' }, { v: '2,4 gg', l: 'Lead time medio', c: '#211d17' }, { v: '78%', l: 'Saturazione linee', c: '#dfa000' }],
+      kpis: [
+        { v: '8', l: 'In lavorazione', c: '#211d17', dt: { head: ['Bolla lav.', 'Articolo', 'Q.tà', 'Avanz.'], rows: [['BL 0712', 'Raccordo PVC ø110', '1.200', '40%'], ['BL 0711', 'Griglia aerazione 150', '800', '75%'], ['BL 0710', 'Sifone PVC ø40', '600', '20%']], note: '…e altri 5 lotti in coda' } },
+        { v: '5', l: 'Completati oggi', c: '#2e9e5f', dt: { head: ['Bolla lav.', 'Articolo', 'Q.tà'], rows: [['BL 0709', 'Raccordo PP ø50', '900'], ['BL 0708', 'Pozzetto PP 30×30', '300'], ['BL 0707', 'Cassetta WC', '250']], note: '…e altri 2 lotti' } },
+        { v: '2,4 gg', l: 'Lead time medio', c: '#211d17', dt: { head: ['Famiglia', 'Lead time'], rows: [['Raccordi PVC/PP', '2,0 gg'], ['Griglie di aerazione', '2,6 gg'], ['Valvole anti-riflusso', '3,1 gg']] } },
+        { v: '78%', l: 'Saturazione linee', c: '#dfa000', dt: { head: ['Linea', 'Saturazione'], rows: [['Stampaggio PVC', '86%'], ['Stampaggio PP', '74%'], ['Assemblaggio', '68%']] } },
+      ],
       themes: ['Linee attive: stampaggio PVC, PP, assemblaggio', 'Coda: 8 lotti · priorità ai raccordi ø110', 'Scarti di processo 1,8% (sotto soglia 3%)'],
       narr: 'Otto lotti in lavorazione e cinque completati oggi, lead time medio 2,4 giorni. Le linee sono al 78%: c’è margine per anticipare il riordino dei raccordi ø110 sotto scorta.',
     },
     magazzino: {
       title: 'Magazzino · scorte e preparazione', accent: '#dfa000',
-      kpis: [{ v: '12', l: 'Spedizioni in prep.', c: '#211d17' }, { v: '6', l: 'Codici sotto scorta', c: '#d23b2c' }, { v: '5,4x', l: 'Rotazione', c: '#211d17' }, { v: '94%', l: 'Accuratezza picking', c: '#2e9e5f' }],
+      kpis: [
+        { v: '12', l: 'Spedizioni in prep.', c: '#211d17', dt: { head: ['Spedizione', 'Cliente', 'Codici', 'Stato'], rows: [['#SP-2025-0337', 'Idrotermica Salento', '5', 'In prelievo'], ['#SP-2025-0338', 'Edil Murge', '8', 'Da avviare'], ['#SP-2025-0339', 'Costruzioni Daunia', '3', 'Imballaggio']], note: '…e altre 9 spedizioni' } },
+        { v: '6', l: 'Codici sotto scorta', c: '#d23b2c', dt: { head: ['Articolo', 'Dispon.', 'Scorta min', 'Copert.'], rows: [['Raccordo PVC ø110', '90', '250', '4 gg'], ['Sifone PVC ø40', '140', '200', '8 gg'], ['Griglia aerazione 150', '210', '260', '9 gg']], note: '…e altri 3 codici' } },
+        { v: '5,4x', l: 'Rotazione', c: '#211d17', dt: { head: ['Famiglia', 'Rotazione'], rows: [['Raccordi PVC', '6,2x'], ['Griglie di aerazione', '5,1x'], ['Valvole anti-riflusso', '3,1x']] } },
+        { v: '94%', l: 'Accuratezza picking', c: '#2e9e5f', dt: { head: ['Operatore', 'Accuratezza'], rows: [['M. Carluccio', '96%'], ['Media team', '94%'], ['Soglia obiettivo', '≥ 92%']] } },
+      ],
       themes: ['Sotto scorta critico: Raccordo PVC ø110 (4 gg)', 'Picking attivo: #SP-2025-0337 · Idrotermica Salento', 'Rotazione lenta: valvole anti-riflusso (capitale fermo)'],
       narr: 'Dodici spedizioni in preparazione e sei codici sotto scorta, il più critico il raccordo ø110. L’accuratezza del picking è al 94%: ogni prelievo aggiorna le giacenze in tempo reale.',
       go: { screen: 'picking', label: 'Apri l’app picking' },
     },
     spedizione: {
       title: 'Spedizione · consegne in corso', accent: '#2e9e5f',
-      kpis: [{ v: '5', l: 'In transito', c: '#211d17' }, { v: '2', l: 'In ritardo', c: '#dfa000' }, { v: '92%', l: 'On-time', c: '#2e9e5f' }, { v: '1,8 gg', l: 'Consegna media', c: '#211d17' }],
+      kpis: [
+        { v: '5', l: 'In transito', c: '#211d17', dt: { head: ['Spedizione', 'Cliente', 'Corriere', 'ETA'], rows: [['#SP-2025-0330', 'Hellas Hydro', 'Export DHL', '24/06'], ['#SP-2025-0332', 'Edil Murge', 'BRT', '21/06'], ['#SP-2025-0333', 'Idraulica Jonica', 'GLS', '21/06']], note: '…e altre 2 spedizioni' } },
+        { v: '2', l: 'In ritardo', c: '#dfa000', dt: { head: ['Spedizione', 'Cliente', 'Ritardo'], rows: [['#SP-2025-0331', 'Termoidraulica Adriatica', '+2 gg'], ['#SP-2025-0334', 'Edil Salento Group', '+1 gg']] } },
+        { v: '92%', l: 'On-time', c: '#2e9e5f', dt: { head: ['Corriere', 'On-time'], rows: [['BRT', '94%'], ['GLS', '90%'], ['Export DHL', '91%']] } },
+        { v: '1,8 gg', l: 'Consegna media', c: '#211d17', dt: { head: ['Area', 'Giorni'], rows: [['Italia', '1,5 gg'], ['Export', '3,2 gg']] } },
+      ],
       themes: ['Corrieri: 3 spedizioni Sud · 2 Centro', 'In ritardo: #SP-2025-0331 e #SP-2025-0334', 'Resi/contestazioni: 0 questa settimana'],
       narr: 'Cinque spedizioni in transito, due in ritardo sulla data prevista. La puntualità resta al 92% con consegna media di 1,8 giorni.',
     },
     fatturazione: {
       title: 'Fatturazione · ciclo attivo', accent: '#2e9e5f',
-      kpis: [{ v: '24', l: 'Fatture emesse', c: '#211d17' }, { v: '€ 128k', l: 'Fatturato oggi', c: '#211d17' }, { v: '2', l: 'Da emettere', c: '#dfa000' }, { v: '0', l: 'Note di credito', c: '#2e9e5f' }],
+      kpis: [
+        { v: '24', l: 'Fatture emesse', c: '#211d17', dt: { head: ['Fattura', 'Cliente', 'Importo', 'SDI'], rows: [['FT 2/000312', 'Idrotermica Salento', '€ 6.240', 'Consegnata'], ['FT 2/000311', 'Edil Murge', '€ 4.180', 'Inviata'], ['FT 2/000310', 'Hellas Hydro', '€ 9.350', 'Inviata']], note: '…e altre 21 fatture (Docuvision)' } },
+        { v: '€ 128k', l: 'Fatturato oggi', c: '#211d17', dt: { head: ['Tipo documento', 'Valore'], rows: [['Immediata', '€ 74k'], ['Differita (da DDT)', '€ 41k'], ['PA · split payment', '€ 13k']] } },
+        { v: '2', l: 'Da emettere', c: '#dfa000', dt: { head: ['Rif. DDT', 'Cliente', 'Importo'], rows: [['DDT 0451', 'Edil Murge', '€ 4.180'], ['DDT 0452', 'Costruzioni Daunia', '€ 2.900']] } },
+        { v: '0', l: 'Note di credito', c: '#2e9e5f', dt: { head: [], rows: [], note: 'Nessuna nota di credito emessa oggi. Ultima: NC 2/000045 del 12/06.' } },
+      ],
       themes: ['Emissione automatica alla conferma spedizione', 'Split payment: 6 fatture verso PA', 'Tempo medio ordine→fattura: 3,1 giorni'],
       narr: 'Ventiquattro fatture emesse oggi per € 128k, due ancora da emettere a valle delle spedizioni. Il ciclo ordine→fattura è sceso a 3,1 giorni.',
     },
     incasso: {
       title: 'Incasso · cassa e crediti', accent: '#dfa000',
-      kpis: [{ v: '€ 218k', l: 'Incassato (mese)', c: '#2e9e5f' }, { v: '€ 47,8k', l: 'Scaduto', c: '#d23b2c' }, { v: '58 gg', l: 'DSO', c: '#211d17' }, { v: '3', l: 'Clienti oltre fido', c: '#dfa000' }],
+      kpis: [
+        { v: '€ 218k', l: 'Incassato (mese)', c: '#2e9e5f', dt: { head: ['Modalità', 'Valore'], rows: [['Bonifico', '€ 138k'], ['RiBa', '€ 64k'], ['Contanti / altro', '€ 16k']] } },
+        { v: '€ 47,8k', l: 'Scaduto', c: '#d23b2c', dt: { head: ['Cliente', 'Scaduto', 'gg'], rows: [['Edilsud Costruzioni', '€ 12.300', '68'], ['Costruzioni Daunia', '€ 8.500', '62'], ['Idraulica Jonica', '€ 4.000', '35']], note: '…e altre posizioni minori' } },
+        { v: '58 gg', l: 'DSO', c: '#211d17', dt: { head: ['Mese', 'DSO'], rows: [['Aprile', '52 gg'], ['Maggio', '55 gg'], ['Giugno', '58 gg']] } },
+        { v: '3', l: 'Clienti oltre fido', c: '#dfa000', dt: { head: ['Cliente', 'Fido', 'Esposizione'], rows: [['Edilsud Costruzioni', '€ 15.000', '€ 30.800'], ['Costruzioni Daunia', '€ 20.000', '€ 22.400'], ['Idraulica Jonica', '€ 10.000', '€ 11.200']] } },
+      ],
       themes: ['Scaduto in crescita: +31% da marzo', 'Top scaduto: Edilsud € 12,3k · Daunia € 8,5k', 'Solleciti automatici pronti per 4 posizioni'],
       narr: 'La cassa del mese è positiva (€ 218k incassati) ma lo scaduto è salito a € 47,8k, +31% da marzo. Conviene agire sui crediti più vecchi prima che pesino sulla liquidità.',
       go: { screen: 'cabina', label: 'Apri la Cabina di regia' },
@@ -870,15 +907,41 @@ function agenticoScreen() {
   let flowPanel = '';
   if (fo && FLOW_DETAIL[fo]) {
     const d = FLOW_DETAIL[fo];
-    const kpiHtml = d.kpis.map(k => `<div style="flex:1;min-width:120px;background:#fff;border:1px solid #e4ddd2;border-radius:11px;padding:12px 13px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600;color:${k.c};line-height:1;">${k.v}</div><div style="font-size:10.5px;color:#8a8073;margin-top:5px;">${k.l}</div></div>`).join('');
+    const kpiHtml = d.kpis.map((k, i) => {
+      const key = fo + ':' + i;
+      const act = App.state.flowKpi === key;
+      return `<button data-h="${App.reg(() => App.toggleFlowKpi(key))}" title="Esplodi il dato" style="appearance:none;cursor:pointer;text-align:left;flex:1;min-width:120px;background:${act ? '#eef2fb' : '#fff'};border:1px solid ${act ? '#1b4a93' : '#e4ddd2'};border-radius:11px;padding:12px 13px;transition:all .12s;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600;color:${k.c};line-height:1;">${k.v}</div>
+        <div style="display:flex;align-items:center;gap:5px;margin-top:5px;"><span style="font-size:10.5px;color:#8a8073;flex:1;">${k.l}</span><span style="font-size:11px;color:${act ? '#1b4a93' : '#cabfae'};transition:transform .15s;display:inline-block;transform:rotate(${act ? 90 : 0}deg);">›</span></div>
+      </button>`;
+    }).join('');
+    // dettaglio esploso del KPI selezionato
+    let kpiDrill = '';
+    const sel = App.state.flowKpi && App.state.flowKpi.startsWith(fo + ':') ? d.kpis[+App.state.flowKpi.split(':')[1]] : null;
+    if (sel && sel.dt) {
+      const dtbl = sel.dt;
+      const thS = `text-align:left;padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#a99e8d;border-bottom:1px solid #ece6dc;`;
+      const tdS = `padding:8px 10px;font-size:12px;color:#3a342c;border-bottom:1px solid #f4efe7;`;
+      const tbl = dtbl.head.length ? `<table style="width:100%;border-collapse:collapse;">
+        <thead><tr>${dtbl.head.map((hh, j) => `<th style="${thS}${j > 0 ? 'text-align:right;' : ''}">${hh}</th>`).join('')}</tr></thead>
+        <tbody>${dtbl.rows.map(r => `<tr>${r.map((cc, j) => `<td style="${tdS}${j > 0 ? "text-align:right;font-family:'IBM Plex Mono',monospace;" : 'font-weight:500;color:#211d17;'}">${cc}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>` : '';
+      kpiDrill = `<div style="margin-bottom:14px;background:#fbf9f5;border:1px solid #e4ddd2;border-radius:11px;padding:12px 14px;animation:agrise .18s ease;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:#1b4a93;font-weight:600;">Dettaglio · ${sel.l}</span><button data-h="${App.reg(() => App.toggleFlowKpi(App.state.flowKpi))}" style="margin-left:auto;appearance:none;cursor:pointer;border:none;background:none;color:#a99e8d;font-size:16px;line-height:1;padding:0;">×</button></div>
+        ${tbl}
+        ${dtbl.note ? `<div style="font-size:11px;color:#8a8073;margin-top:9px;${dtbl.head.length ? '' : 'margin-top:0;'}">${dtbl.note}</div>` : ''}
+      </div>`;
+    }
     const themesHtml = d.themes.map(t => `<div style="display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-bottom:1px solid #f4efe7;"><span style="width:6px;height:6px;border-radius:50%;background:${d.accent};margin-top:6px;flex:none;"></span><span style="font-size:12.5px;color:#5a5247;line-height:1.45;">${t}</span></div>`).join('');
     flowPanel = `
       <div style="margin-top:16px;background:#fff;border:1px solid #e4ddd2;border-left:4px solid ${d.accent};border-radius:12px;padding:16px 18px;">
         <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
           <h3 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;color:#211d17;margin:0;">${d.title}</h3>
+          <span style="font-size:11px;color:#8a8073;">tocca un dato per esploderlo</span>
           <button data-h="${App.reg(() => App.toggleFlow(fo))}" style="margin-left:auto;appearance:none;cursor:pointer;border:none;background:none;color:#a99e8d;font-size:18px;line-height:1;padding:0;">×</button>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">${kpiHtml}</div>
+        ${kpiDrill}
         <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:#a99e8d;margin-bottom:4px;">Temi del sistema</div>
         <div style="margin-bottom:13px;">${themesHtml}</div>
         <div style="display:flex;gap:10px;background:#16213f;border-radius:10px;padding:12px 14px;${d.go ? 'margin-bottom:13px;' : ''}">
