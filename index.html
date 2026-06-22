@@ -180,10 +180,10 @@ const App = {
 
 // ---------- synthetic data ----------
 const SOURCES = [
-  { name: 'Gestionale', meta: '1 min fa' },
+  { name: 'Mexal', meta: '1 min fa' },
+  { name: 'MexalDB', meta: 'replica · R/O' },
   { name: 'MES', meta: '2 min fa' },
   { name: 'App Picking', meta: 'live' },
-  { name: 'Contabilità', meta: '8 min fa' },
 ];
 
 const FORWARDED = [
@@ -708,11 +708,13 @@ function cabinaScreen(clock) {
               <div style="border-left:1px solid #ece6dc;padding-left:14px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:600;color:#211d17;line-height:1;">12</div><div style="font-size:11.5px;color:#8a8073;margin-top:5px;">Spedizioni in prep.</div></div>
             </div>
             <div style="border-top:1px solid #ece6dc;padding-top:13px;">
-              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px;"><span style="font-size:12px;color:#5a5247;">Indice rotazione</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:600;color:#211d17;">5,4x <span style="color:#a99e8d;">annuo</span></span></div>
-              <div style="display:flex;gap:3px;height:8px;">
-                <div style="flex:1;border-radius:3px;background:#2e9e5f;"></div><div style="flex:1;border-radius:3px;background:#2e9e5f;"></div><div style="flex:1;border-radius:3px;background:#dfa000;"></div><div style="flex:1;border-radius:3px;background:#ece6dc;"></div><div style="flex:1;border-radius:3px;background:#ece6dc;"></div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;"><span style="font-size:12px;color:#5a5247;">Raccordo PVC ø110</span><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#d23b2c;font-weight:600;">copertura 4 gg</span></div>
+              <div style="display:flex;gap:6px;">
+                <div style="flex:1;text-align:center;background:#f7f4ee;border-radius:7px;padding:6px 2px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:#211d17;">320</div><div style="font-size:8.5px;color:#8a8073;margin-top:2px;">Esist.</div></div>
+                <div style="flex:1;text-align:center;background:#f9e6e2;border-radius:7px;padding:6px 2px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:#d23b2c;">90</div><div style="font-size:8.5px;color:#8a8073;margin-top:2px;">Dispon.</div></div>
+                <div style="flex:1;text-align:center;background:#f7f4ee;border-radius:7px;padding:6px 2px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:#211d17;">230</div><div style="font-size:8.5px;color:#8a8073;margin-top:2px;">Impeg.</div></div>
+                <div style="flex:1;text-align:center;background:#f7f4ee;border-radius:7px;padding:6px 2px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:#1b4a93;">1.200</div><div style="font-size:8.5px;color:#8a8073;margin-top:2px;">Ordin.</div></div>
               </div>
-              <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#8a8073;margin-top:6px;">Raccordo PVC ø110 · copertura 4 gg</div>
             </div>
           </div>
 
@@ -738,6 +740,11 @@ function cabinaScreen(clock) {
         <div style="margin-top:18px;background:#eef2fb;border:1px solid #cdd8f0;border-radius:12px;padding:13px 16px;display:flex;align-items:center;gap:12px;">
           <div style="width:26px;height:26px;border-radius:7px;background:#1b4a93;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:13px;">A</div>
           <div style="font-size:13px;color:#2a3a72;line-height:1.45;"><strong style="color:#211d17;">L'agente analizza e propone.</strong> La decisione resta a te — ogni mossa attende una conferma umana.</div>
+        </div>
+
+        <div style="margin-top:10px;background:#16213f;border-radius:12px;padding:11px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:#6f8fd8;font-weight:600;flex:none;">Integrazione Mexal</span>
+          <div style="font-size:12px;color:#cfd6e6;line-height:1.5;flex:1;min-width:240px;">Lettura da <strong style="color:#fff;">MexalDB</strong> (sola lettura) · azioni eseguite in <strong style="color:#fff;">WebApi</strong> · personalizzazioni <strong style="color:#fff;">Sprix &amp; Collage</strong> che non modificano le strutture dati del gestionale.</div>
         </div>
       </div>
 
@@ -781,13 +788,13 @@ function agenticoScreen() {
   // ---- pipeline del ciclo dell'ordine ----
   const fo = App.state.flowOpen;
   const stages = [
-    { id: 'gestionale', ic: '🧾', label: 'Gestionale', kpi: '37', sub: 'ordini oggi', dot: '#2e9e5f' },
-    { id: 'crediti', ic: '🛡️', label: 'Controllo crediti', kpi: '1', sub: 'bloccato', dot: '#d23b2c', gate: true },
-    { id: 'produzione', ic: '🏭', label: 'Produzione', kpi: '8', sub: 'in lavorazione', dot: '#2e9e5f' },
-    { id: 'magazzino', ic: '📦', label: 'Magazzino', kpi: '12', sub: 'in preparazione', dot: '#dfa000' },
-    { id: 'spedizione', ic: '🚚', label: 'Spedizione', kpi: '5', sub: 'in transito', dot: '#2e9e5f' },
-    { id: 'fatturazione', ic: '🧮', label: 'Fatturazione', kpi: '24', sub: 'emesse', dot: '#2e9e5f' },
-    { id: 'incasso', ic: '💶', label: 'Incasso', kpi: '€ 218k', sub: 'scaduto € 47,8k', dot: '#dfa000' },
+    { id: 'gestionale', ic: '🧾', label: 'Gestionale', kpi: '37', sub: 'ordini oggi', dot: '#2e9e5f', doc: 'PV → OC' },
+    { id: 'crediti', ic: '🛡️', label: 'Controllo crediti', kpi: '1', sub: 'bloccato', dot: '#d23b2c', gate: true, doc: 'fido' },
+    { id: 'produzione', ic: '🏭', label: 'Produzione', kpi: '8', sub: 'in lavorazione', dot: '#2e9e5f', doc: 'DBA · BL' },
+    { id: 'magazzino', ic: '📦', label: 'Magazzino', kpi: '12', sub: 'in preparazione', dot: '#dfa000', doc: 'scarico' },
+    { id: 'spedizione', ic: '🚚', label: 'Spedizione', kpi: '5', sub: 'in transito', dot: '#2e9e5f', doc: 'DDT' },
+    { id: 'fatturazione', ic: '🧮', label: 'Fatturazione', kpi: '24', sub: 'emesse', dot: '#2e9e5f', doc: 'FT · SDI' },
+    { id: 'incasso', ic: '💶', label: 'Incasso', kpi: '€ 218k', sub: 'scaduto € 47,8k', dot: '#dfa000', doc: 'scadenz.' },
   ];
   const node = s => {
     const active = fo === s.id;
@@ -800,7 +807,8 @@ function agenticoScreen() {
         <span style="position:absolute;top:-4px;right:-4px;width:11px;height:11px;border-radius:50%;background:${s.dot};border:2px solid #fbf9f5;${s.gate ? 'animation:agpulse 1.5s infinite;' : ''}"></span>
       </div>
       <div style="font-size:11px;font-weight:700;color:${active ? '#1b4a93' : '#211d17'};margin-top:9px;line-height:1.2;">${s.label}</div>
-      <div style="font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;color:#211d17;margin-top:3px;">${s.kpi}</div>
+      <div style="display:inline-block;margin-top:4px;font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.04em;color:#1b4a93;background:#eef2fb;border:1px solid #cdd8f0;border-radius:5px;padding:1px 6px;">${s.doc}</div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;color:#211d17;margin-top:5px;">${s.kpi}</div>
       <div style="font-size:10px;color:#8a8073;">${s.sub}</div>
     </div>`;
   };
@@ -940,6 +948,22 @@ function agenticoScreen() {
         </div>
 
         <div style="margin-top:16px;background:#fff;border:1px solid #e4ddd2;border-radius:12px;padding:15px 16px;">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:11px;"><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#8a8073;">Castelletto fido · Mexal</span><span style="font-size:11px;color:#8a8073;">fido concesso <strong style="color:#211d17;font-family:'IBM Plex Mono',monospace;">€ 15.000</strong></span></div>
+          <div style="display:flex;gap:8px;margin-bottom:10px;">
+            <div style="flex:1;background:#f9e6e2;border-radius:8px;padding:9px 10px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#d23b2c;">€ 12.300</div><div style="font-size:9.5px;color:#8a8073;margin-top:2px;">Scaduto</div></div>
+            <div style="flex:none;align-self:center;color:#a99e8d;font-weight:700;">+</div>
+            <div style="flex:1;background:#f7f4ee;border-radius:8px;padding:9px 10px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#211d17;">€ 6.400</div><div style="font-size:9.5px;color:#8a8073;margin-top:2px;">Ordini in corso</div></div>
+            <div style="flex:none;align-self:center;color:#a99e8d;font-weight:700;">+</div>
+            <div style="flex:1;background:#f7f4ee;border-radius:8px;padding:9px 10px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#211d17;">€ 12.100</div><div style="font-size:9.5px;color:#8a8073;margin-top:2px;">Da incassare</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;background:#16213f;border-radius:8px;padding:9px 12px;">
+            <span style="font-size:12px;color:#cfd6e6;flex:1;">Esposizione totale con questo ordine</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:#fff;">€ 30.800</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:#fff;background:#d23b2c;border-radius:6px;padding:2px 7px;">+105% sul fido</span>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;background:#fff;border:1px solid #e4ddd2;border-radius:12px;padding:15px 16px;">
           <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#8a8073;margin-bottom:11px;">Inoltrato alle persone giuste</div>
           <div style="display:flex;gap:22px;flex-wrap:wrap;">${forwardedHtml}</div>
         </div>
@@ -1021,9 +1045,9 @@ function pickingScreen() {
   const confirmBg = fullyPicked ? '#1b4a93' : (partial ? '#dfa000' : '#cabfae');
   const confirmH = App.reg(() => {
     if (fullyPicked) {
-      App.toast('Spedizione #SP-2025-0337 confermata completa (' + pickedUnits + '/' + reqUnits + ' pz). Scorte aggiornate sul MES, tempo di prelievo: 6 min 12 s.');
+      App.toast('Spedizione #SP-2025-0337 confermata completa (' + pickedUnits + '/' + reqUnits + ' pz). Scarico di magazzino e proposta di DDT generati in Mexal via WebApi · tempo di prelievo 6 min 12 s.');
     } else if (partial) {
-      App.toast('Spedizione #SP-2025-0337 confermata PARZIALE: ' + pickedUnits + '/' + reqUnits + ' pz su ' + total + ' codici. Scarto di ' + (reqUnits - pickedUnits) + ' pz registrato → riordino a Marco Carluccio (Produzione) e avviso a Gaetano Carluccio (Commerciale).');
+      App.toast('Spedizione #SP-2025-0337 confermata PARZIALE: ' + pickedUnits + '/' + reqUnits + ' pz su ' + total + ' codici. Scarico e DDT parziale scritti in Mexal (WebApi); scarto di ' + (reqUnits - pickedUnits) + ' pz → riordino a Marco Carluccio (Produzione) e avviso a Gaetano Carluccio (Commerciale).');
     } else {
       App.toast('Per ogni codice conferma la quantità piena o indica i pezzi realmente prelevati prima di confermare.');
     }
@@ -1045,7 +1069,7 @@ function pickingScreen() {
           <div style="height:44px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 24px;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:#211d17;"><span>9:41</span><span>5G &nbsp;100%</span></div>
           <div style="flex:none;background:#16213f;padding:12px 18px 14px;">
             <div style="display:flex;align-items:center;justify-content:space-between;">
-              <div style="display:flex;align-items:center;gap:8px;"><div style="width:22px;height:22px;border-radius:6px;background:#dc2a1c;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 28 28" width="14" height="14" aria-hidden="true"><g fill="none" stroke-linecap="round"><path d="M4 10 q3.5 -3.2 7 0 t7 0" stroke="#fff" stroke-width="2.7"/><path d="M4 15 q3.5 -3.2 7 0 t7 0" stroke="#fff" stroke-width="2.7"/><path d="M4 20 q3.5 -3.2 7 0 t7 0" stroke="#16213f" stroke-width="3"/></g></svg></div><span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;color:#fff;">Picking</span></div>
+              <div style="display:flex;align-items:center;gap:8px;"><div style="width:22px;height:22px;border-radius:6px;background:#dc2a1c;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 28 28" width="14" height="14" aria-hidden="true"><g fill="none" stroke-linecap="round"><path d="M4 10 q3.5 -3.2 7 0 t7 0" stroke="#fff" stroke-width="2.7"/><path d="M4 15 q3.5 -3.2 7 0 t7 0" stroke="#fff" stroke-width="2.7"/><path d="M4 20 q3.5 -3.2 7 0 t7 0" stroke="#16213f" stroke-width="3"/></g></svg></div><div style="line-height:1.1;"><div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;color:#fff;">Picking</div><div style="font-family:'IBM Plex Mono',monospace;font-size:7.5px;letter-spacing:.12em;color:#9aa6c2;text-transform:uppercase;">MobileDesk · Mexal</div></div></div>
               <span style="font-size:11px;color:#9a9082;font-family:'IBM Plex Mono',monospace;">M. Carluccio</span>
             </div>
           </div>
@@ -1078,7 +1102,7 @@ function pickingScreen() {
         <div style="display:flex;flex-direction:column;gap:12px;">
           <div style="background:#fff;border:1px solid #e4ddd2;border-radius:12px;padding:14px;display:flex;gap:11px;align-items:flex-start;"><span style="width:8px;height:8px;border-radius:50%;background:#2e9e5f;margin-top:5px;flex:none;"></span><div style="font-size:13px;color:#5a5247;line-height:1.5;"><strong style="color:#211d17;">Tempo di prelievo</strong> per spedizione e per operatore</div></div>
           <div style="background:#fff;border:1px solid #e4ddd2;border-radius:12px;padding:14px;display:flex;gap:11px;align-items:flex-start;"><span style="width:8px;height:8px;border-radius:50%;background:#2e9e5f;margin-top:5px;flex:none;"></span><div style="font-size:13px;color:#5a5247;line-height:1.5;"><strong style="color:#211d17;">Quantità reali e scarti</strong> tracciati in automatico a ogni conferma</div></div>
-          <div style="background:#fff;border:1px solid #e4ddd2;border-radius:12px;padding:14px;display:flex;gap:11px;align-items:flex-start;"><span style="width:8px;height:8px;border-radius:50%;background:#2e9e5f;margin-top:5px;flex:none;"></span><div style="font-size:13px;color:#5a5247;line-height:1.5;"><strong style="color:#211d17;">Scorte in tempo reale</strong> — il MES si aggiorna a ogni conferma</div></div>
+          <div style="background:#fff;border:1px solid #e4ddd2;border-radius:12px;padding:14px;display:flex;gap:11px;align-items:flex-start;"><span style="width:8px;height:8px;border-radius:50%;background:#2e9e5f;margin-top:5px;flex:none;"></span><div style="font-size:13px;color:#5a5247;line-height:1.5;"><strong style="color:#211d17;">Scorte in tempo reale</strong> — Mexal: scarico e DDT generati via WebApi a ogni conferma</div></div>
         </div>
         <div style="margin-top:16px;background:#eef2fb;border:1px solid #cdd8f0;border-radius:12px;padding:13px 15px;font-size:13px;color:#2a3a72;line-height:1.5;">Oggi questo passaggio vive su carta. <strong style="color:#211d17;">Domani è il dato che alimenta la cabina di regia.</strong></div>
       </div>
@@ -1377,7 +1401,7 @@ function biScreen() {
         <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#8a8073;">Analisi BI · workbench OLAP</span>
         <h1 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:24px;letter-spacing:-.02em;color:#211d17;margin:8px 0 0;">Crea analisi e lascia che l'agente le racconti</h1>
       </div>
-      <span style="font-size:12.5px;color:#8a8073;font-family:'IBM Plex Mono',monospace;">Cubo Vendite Airgama · 2025</span>
+      <span style="font-size:12.5px;color:#8a8073;font-family:'IBM Plex Mono',monospace;">Cubo Vendite Airgama · 2025 · da MexalDB · coerente con ADP B&amp;B</span>
     </div>
 
     <!-- presets -->
