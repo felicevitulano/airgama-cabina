@@ -1544,7 +1544,8 @@ function voxAnalyze(query) {
 
   // misura
   let measure = 'fatturato';
-  if (has('margin')) measure = (has('%') || has('percentu')) ? 'marginePct' : 'margine';
+  if (has('marginalit') || (has('margin') && (has('%') || has('percentu')))) measure = 'marginePct';
+  else if (has('margin', 'reddit')) measure = 'margine';
   else if (has('scadut', 'insolut', 'credit')) measure = 'scaduto';
   else if (has('budget', 'target', 'obiettiv', 'raggiungiment')) measure = 'achiev';
   else if (has('quantit', 'pezzi', 'volumi', ' pz')) measure = 'qta';
@@ -1553,9 +1554,12 @@ function voxAnalyze(query) {
   let dim = 'famiglia';
   if (has('client')) dim = 'cliente';
   else if (has('region')) dim = 'regione';
-  else if (has('andamento', 'trend', 'mensile', 'mese', 'tempo', 'crescita', 'evoluzione', 'trimestre')) dim = 'mese';
-  else if (has('area', 'italia', 'export', 'estero', 'geografi')) dim = 'area';
+  else if (has('andamento', 'trend', 'mensile', 'mese', 'tempo', 'crescita', 'evoluzione')) dim = 'mese';
+  else if (has('area', 'geografi')) dim = 'area';
   else if (has('famiglia', 'prodott', 'linea', 'articol')) dim = 'famiglia';
+  if (has('famiglia', 'prodott') && has('trimestr')) dim = 'famiglia'; // confronto famiglia × trimestre
+  const numM = s.match(/\b(\d{1,2})\b/);
+  const limit = numM ? Math.max(1, Math.min(12, +numM[1])) : 8;
 
   // filtri
   let facts = FACTS; const fl = [];
@@ -1582,17 +1586,38 @@ function voxAnalyze(query) {
   const areaRows = ['Italia', 'Export'].map(a => ({ label: a, val: olapAgg(facts.filter(r => r.area === a), 'fatturato') }));
   const achFam = OLAP_FAM.map(f => ({ label: f.name, val: olapAgg(facts.filter(r => r.famiglia === f.name), 'achiev') })).sort((a, b) => b.val - a.val);
   const marFam = OLAP_FAM.map(f => ({ label: f.name, val: olapAgg(facts.filter(r => r.famiglia === f.name), 'marginePct') })).sort((a, b) => b.val - a.val);
-  const rank = olapDistinct(facts, dim).map(v => ({ label: v, val: olapAgg(facts.filter(r => r[dim] === v), measure) })).sort((a, b) => Math.abs(b.val) - Math.abs(a.val)).slice(0, 8);
+  const rank = olapDistinct(facts, dim).map(v => ({ label: v, val: olapAgg(facts.filter(r => r[dim] === v), measure) })).sort((a, b) => Math.abs(b.val) - Math.abs(a.val)).slice(0, limit);
+  const singleArea = fl.includes('Italia') || fl.includes('Export');
+  const wantCompare = has('trimestr') && has('famiglia', 'prodott'); // confronto famiglia × trimestre
 
-  // grafici scelti in base alla richiesta
+  // tabella di confronto famiglia × trimestre vs budget
+  const cmpTable = () => {
+    const trims = ['T1', 'T2'];
+    const thS = `padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:#a99e8d;border-bottom:1px solid #ece6dc;`;
+    const cell = ff => { const fat = olapAgg(ff, 'fatturato'), bud = olapAgg(ff, 'budget'), ach = bud ? fat / bud * 100 : 0; return `<td style="padding:8px 10px;text-align:right;border-bottom:1px solid #f4efe7;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#211d17;">${olapFmt(fat, 'fatturato')}<div style="font-size:9px;font-weight:700;color:${olapBarColor('achiev', ach)};">${ach.toFixed(0)}% budget</div></td>`; };
+    const rws = OLAP_FAM.map(f => `<tr><td style="padding:8px 10px;border-bottom:1px solid #f4efe7;font-size:12px;font-weight:500;color:#211d17;">${f.name}</td>${trims.map(t => cell(facts.filter(r => r.famiglia === f.name && r.trimestre === t))).join('')}</tr>`).join('');
+    return `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;"><thead><tr><th style="${thS}text-align:left;">Famiglia</th><th style="${thS}text-align:right;">T1 (gen–mar)</th><th style="${thS}text-align:right;">T2 (apr–giu)</th></tr></thead><tbody>${rws}</tbody></table></div>`;
+  };
+
+  // grafici scelti in coerenza con la domanda (tipi diversi)
   const charts = [];
+  if (wantCompare) charts.push({ t: 'Famiglia × trimestre · consuntivo vs budget', s: '% = raggiungimento del target', html: cmpTable() });
+  // grafico principale, in base a dimensione/misura
   if (dim === 'mese') charts.push({ t: `${MEASURES[measure].label} per mese`, s: 'andamento nel tempo', html: chLine(monthsM, measure, (measure === 'fatturato' ? monthsBud : null), 'budget') });
-  else if (dim === 'area') charts.push({ t: 'Italia vs Export', s: `${MEASURES[measure].label} per area`, html: chBars(rank, measure, 70) });
-  else charts.push({ t: `${MEASURES[measure].label} per ${BI_FIELDS[dim].label.toLowerCase()}`, s: 'classifica', html: chBars(rank, measure, 150) });
-  if (dim !== 'mese' && (wantTime || charts.length < 2)) charts.push({ t: 'Fatturato vs Budget · mese', s: '<span style="color:#1b4a93;font-weight:600;">consuntivo</span> vs <span style="color:#cab32e;font-weight:600;">budget</span>', html: chLine(monthsFat, 'fatturato', monthsBud, 'budget') });
-  if ((wantArea || charts.length < 3) && dim !== 'area' && !fl.includes('Italia') && !fl.includes('Export')) charts.push({ t: 'Quota Italia vs Export', s: 'quota di fatturato', html: chDonut(areaRows, 'fatturato') });
-  if (wantBudget) charts.push({ t: '% su budget per famiglia', s: 'raggiungimento target', html: chColumns(achFam, 'achiev') });
-  else if (wantMargin) charts.push({ t: 'Margine % per famiglia', s: 'redditività', html: chColumns(marFam, 'marginePct') });
+  else if (dim === 'area') charts.push({ t: 'Italia vs Export', s: `quota di ${MEASURES[measure].label.toLowerCase()}`, html: (measure === 'marginePct' || measure === 'achiev') ? chBars(rank, measure, 70) : chDonut(rank, measure) });
+  else charts.push({ t: `Top ${rank.length} · ${MEASURES[measure].label} per ${BI_FIELDS[dim].label.toLowerCase()}`, s: 'classifica', html: chBars(rank, measure, 150) });
+  // complementari coerenti con l'intento, di tipo diverso dal principale
+  if (wantBudget) {
+    if (!(dim === 'famiglia' && measure === 'achiev')) charts.push({ t: '% su budget per famiglia', s: 'raggiungimento target (verde ≥100%)', html: chColumns(achFam, 'achiev') });
+    if (dim !== 'mese') charts.push({ t: 'Fatturato vs Budget · mese', s: '<span style="color:#1b4a93;font-weight:600;">consuntivo</span> vs <span style="color:#cab32e;font-weight:600;">budget</span>', html: chLine(monthsFat, 'fatturato', monthsBud, 'budget') });
+  } else if (wantMargin) {
+    charts.push({ t: 'Margine % per famiglia', s: 'redditività per linea', html: chColumns(marFam, 'marginePct') });
+  } else if (wantTime && dim !== 'mese') {
+    charts.push({ t: 'Fatturato vs Budget · mese', s: 'andamento nel tempo', html: chLine(monthsFat, 'fatturato', monthsBud, 'budget') });
+  } else if (dim !== 'area' && !singleArea) {
+    charts.push({ t: 'Quota Italia vs Export', s: 'composizione del fatturato', html: chDonut(areaRows, 'fatturato') });
+  }
+  if (charts.length < 2) charts.push({ t: 'Fatturato vs Budget · mese', s: 'andamento nel tempo', html: chLine(monthsFat, 'fatturato', monthsBud, 'budget') });
   const charts4 = charts.slice(0, 4);
 
   // KPI
@@ -1616,12 +1641,10 @@ function voxAnalyze(query) {
 function voxScreen() {
   const v = App.state.vox;
   const examples = [
-    'Fatturato per famiglia',
-    'Andamento vendite vs budget',
-    'Margine per cliente in Italia',
-    'Scaduto per cliente',
-    'Vendite valvole anti-riflusso per area',
-    '% su budget per famiglia',
+    'Quali sono i 5 clienti più redditizi?',
+    'Come va l’export rispetto al budget?',
+    'Andamento per mese del venduto',
+    'Confronto per famiglia e trimestre vs budget',
   ];
   const chips = examples.map(q => `<button data-h="${App.reg(() => App.voxAsk(q))}" style="appearance:none;cursor:pointer;border:1px solid #cdd8f0;background:#eef2fb;color:#1b4a93;font-size:12px;font-weight:600;padding:7px 12px;border-radius:999px;">${q}</button>`).join('');
   const inputVal = (v.query || '').replace(/"/g, '&quot;');
