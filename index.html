@@ -1550,13 +1550,16 @@ function voxAnalyze(query) {
   else if (has('budget', 'target', 'obiettiv', 'raggiungiment')) measure = 'achiev';
   else if (has('quantit', 'pezzi', 'volumi', ' pz')) measure = 'qta';
 
-  // dimensione
-  let dim = 'famiglia';
-  if (has('client')) dim = 'cliente';
-  else if (has('region')) dim = 'regione';
+  // dimensione — un "per X" esplicito ha priorità sul tempo
+  let dim;
+  if (has('per client', 'client')) dim = 'cliente';
+  else if (has('per region', 'region')) dim = 'regione';
+  else if (has('per area', 'per zona')) dim = 'area';
+  else if (has('per famiglia', 'per prodott', 'per linea', 'famiglia', 'prodott', 'linea', 'articol')) dim = 'famiglia';
   else if (has('andamento', 'trend', 'mensile', 'mese', 'tempo', 'crescita', 'evoluzione')) dim = 'mese';
   else if (has('area', 'geografi')) dim = 'area';
-  else if (has('famiglia', 'prodott', 'linea', 'articol')) dim = 'famiglia';
+  else dim = 'famiglia';
+  if (has('per mese', 'per trimestr')) dim = 'mese';            // "per mese/trimestre" esplicito
   if (has('famiglia', 'prodott') && has('trimestr')) dim = 'famiglia'; // confronto famiglia × trimestre
   const numM = s.match(/\b(\d{1,2})\b/);
   const limit = numM ? Math.max(1, Math.min(12, +numM[1])) : 8;
@@ -1599,25 +1602,31 @@ function voxAnalyze(query) {
     return `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;"><thead><tr><th style="${thS}text-align:left;">Famiglia</th><th style="${thS}text-align:right;">T1 (gen–mar)</th><th style="${thS}text-align:right;">T2 (apr–giu)</th></tr></thead><tbody>${rws}</tbody></table></div>`;
   };
 
-  // grafici scelti in coerenza con la domanda (tipi diversi)
+  // grafici coerenti con la domanda (tipi diversi, riferiti agli stessi elementi)
   const charts = [];
+  const dimLabel = (dim === 'mese' || dim === 'area') ? '' : BI_FIELDS[dim].label.toLowerCase();
+  const entVals = mk => rank.map(x => ({ label: x.label, val: olapAgg(facts.filter(r => r[dim] === x.label), mk) }));
+  const lineBudget = { t: 'Fatturato vs Budget · mese', s: '<span style="color:#1b4a93;font-weight:600;">consuntivo</span> vs <span style="color:#cab32e;font-weight:600;">budget</span>', html: chLine(monthsFat, 'fatturato', monthsBud, 'budget') };
+
   if (wantCompare) charts.push({ t: 'Famiglia × trimestre · consuntivo vs budget', s: '% = raggiungimento del target', html: cmpTable() });
-  // grafico principale, in base a dimensione/misura
-  if (dim === 'mese') charts.push({ t: `${MEASURES[measure].label} per mese`, s: 'andamento nel tempo', html: chLine(monthsM, measure, (measure === 'fatturato' ? monthsBud : null), 'budget') });
-  else if (dim === 'area') charts.push({ t: 'Italia vs Export', s: `quota di ${MEASURES[measure].label.toLowerCase()}`, html: (measure === 'marginePct' || measure === 'achiev') ? chBars(rank, measure, 70) : chDonut(rank, measure) });
-  else charts.push({ t: `Top ${rank.length} · ${MEASURES[measure].label} per ${BI_FIELDS[dim].label.toLowerCase()}`, s: 'classifica', html: chBars(rank, measure, 150) });
-  // complementari coerenti con l'intento, di tipo diverso dal principale
-  if (wantBudget) {
-    if (!(dim === 'famiglia' && measure === 'achiev')) charts.push({ t: '% su budget per famiglia', s: 'raggiungimento target (verde ≥100%)', html: chColumns(achFam, 'achiev') });
-    if (dim !== 'mese') charts.push({ t: 'Fatturato vs Budget · mese', s: '<span style="color:#1b4a93;font-weight:600;">consuntivo</span> vs <span style="color:#cab32e;font-weight:600;">budget</span>', html: chLine(monthsFat, 'fatturato', monthsBud, 'budget') });
-  } else if (wantMargin) {
-    charts.push({ t: 'Margine % per famiglia', s: 'redditività per linea', html: chColumns(marFam, 'marginePct') });
-  } else if (wantTime && dim !== 'mese') {
-    charts.push({ t: 'Fatturato vs Budget · mese', s: 'andamento nel tempo', html: chLine(monthsFat, 'fatturato', monthsBud, 'budget') });
-  } else if (dim !== 'area' && !singleArea) {
-    charts.push({ t: 'Quota Italia vs Export', s: 'composizione del fatturato', html: chDonut(areaRows, 'fatturato') });
+
+  if (dim === 'mese') {
+    charts.push({ t: `${MEASURES[measure].label} per mese`, s: 'andamento nel tempo', html: chLine(monthsM, measure, (measure === 'fatturato' ? monthsBud : null), 'budget') });
+    if (wantBudget) charts.push({ t: '% su budget per famiglia', s: 'raggiungimento target', html: chColumns(achFam, 'achiev') });
+    else charts.push({ t: `${MEASURES[measure].label} per famiglia`, s: 'composizione per linea', html: chBars(OLAP_FAM.map(f => ({ label: f.name, val: olapAgg(facts.filter(r => r.famiglia === f.name), measure) })).sort((a, b) => Math.abs(b.val) - Math.abs(a.val)), measure, 150) });
+  } else if (dim === 'area') {
+    charts.push({ t: 'Italia vs Export', s: `quota di ${MEASURES[measure].label.toLowerCase()}`, html: (measure === 'marginePct' || measure === 'achiev') ? chBars(rank, measure, 70) : chDonut(rank, measure) });
+    charts.push(lineBudget);
+  } else {
+    // classifica + grafici riferiti agli STESSI top N
+    charts.push({ t: `Top ${rank.length} · ${MEASURES[measure].label} per ${dimLabel}`, s: 'classifica', html: chBars(rank, measure, 150) });
+    charts.push({ t: `Quota sul fatturato · top ${rank.length} ${dimLabel}`, s: 'peso relativo', html: chDonut(entVals('fatturato'), 'fatturato') });
+    if (wantBudget && measure !== 'achiev') charts.push({ t: `% su budget · top ${rank.length} ${dimLabel}`, s: 'raggiungimento target', html: chColumns(entVals('achiev'), 'achiev') });
+    else if (measure !== 'marginePct' && measure !== 'margine') charts.push({ t: `Margine % · top ${rank.length} ${dimLabel}`, s: 'redditività', html: chColumns(entVals('marginePct'), 'marginePct') });
+    else charts.push({ t: `Fatturato · top ${rank.length} ${dimLabel}`, s: 'volume', html: chColumns(entVals('fatturato'), 'fatturato') });
+    if (wantTime || wantBudget) charts.push(lineBudget);
   }
-  if (charts.length < 2) charts.push({ t: 'Fatturato vs Budget · mese', s: 'andamento nel tempo', html: chLine(monthsFat, 'fatturato', monthsBud, 'budget') });
+  if (charts.length < 2) charts.push(lineBudget);
   const charts4 = charts.slice(0, 4);
 
   // KPI
@@ -1631,11 +1640,12 @@ function voxAnalyze(query) {
 
   // narrazione (riusa il motore della BI)
   const nar = biNarrative({ filters: {} }, facts, dim === 'mese' ? ['mese'] : [dim], dim === 'mese' ? [] : ['mese'], [measure]);
-  const lead = `Ho letto la richiesta come <strong>${MEASURES[measure].label}</strong> per <strong>${BI_FIELDS[dim].label.toLowerCase()}</strong>${fl.length ? ` · filtri: ${fl.join(', ')}` : ''}.`;
+  const topTxt = (numM && dim !== 'mese' && dim !== 'area') ? ` · top ${limit}` : '';
+  const lead = `Ho letto la richiesta come <strong>${MEASURES[measure].label}</strong> per <strong>${BI_FIELDS[dim].label.toLowerCase()}</strong>${topTxt}${fl.length ? ` · filtri: ${fl.join(', ')}` : ''}.`;
   const bullets = [lead].concat(nar.bullets);
 
   const headline = (query || '').trim() ? query.trim() : 'Panoramica vendite';
-  return { headline, subtitle: `${MEASURES[measure].label} per ${BI_FIELDS[dim].label.toLowerCase()}${fl.length ? ' · ' + fl.join(', ') : ''}`, kpis, charts: charts4, bullets };
+  return { headline, subtitle: `${MEASURES[measure].label} per ${BI_FIELDS[dim].label.toLowerCase()}${topTxt}${fl.length ? ' · ' + fl.join(', ') : ''}`, kpis, charts: charts4, bullets };
 }
 
 function voxScreen() {
