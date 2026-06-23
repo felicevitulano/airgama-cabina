@@ -48,6 +48,7 @@ const App = {
     openPanel: 'commerciale',
     flowOpen: 'gestionale',
     flowKpi: null,
+    vox: { query: '', submitted: false },
     bi: {
       rows: ['famiglia'],
       cols: [],
@@ -122,6 +123,10 @@ const App = {
   togglePanel(p) { this.set(s => ({ openPanel: s.openPanel === p ? null : p })); },
   toggleFlow(f) { this.set(s => ({ flowOpen: s.flowOpen === f ? null : f, flowKpi: null })); },
   toggleFlowKpi(k) { this.set(s => ({ flowKpi: s.flowKpi === k ? null : k })); },
+
+  voxSubmit() { const el = document.getElementById('voxInput'); const q = el ? el.value : ''; this.set({ vox: { query: q, submitted: !!q.trim() } }); },
+  voxAsk(q) { this.set({ vox: { query: q, submitted: true } }); try { window.scrollTo(0, 0); } catch (e) {} },
+  voxReset() { this.set({ vox: { query: '', submitted: false } }); },
 
   setAlarmFilter(f) { this.set({ alarmFilter: f }); },
   toggleAlarm(id) { this.set(s => ({ openAlarm: s.openAlarm === id ? null : id })); },
@@ -454,6 +459,7 @@ function view() {
           ${navBtn('Ciclo dell\'ordine', 'agentico')}
           ${navBtn('App picking', 'picking')}
           ${navBtn('BI &amp; Insight', 'bi')}
+          ${navBtn('VoxBI', 'vox')}
         </div>
 
         <div style="flex:none;display:flex;align-items:center;gap:8px;padding-left:18px;border-left:1px solid #28335c;">
@@ -467,6 +473,7 @@ function view() {
     ${screen === 'agentico' ? agenticoScreen() : ''}
     ${screen === 'picking' ? pickingScreen() : ''}
     ${screen === 'bi' ? biScreen() : ''}
+    ${screen === 'vox' ? voxScreen() : ''}
 
     ${toastView()}
   </div>`;
@@ -1530,6 +1537,159 @@ function biScreen() {
   </div>`;
 }
 
+// ---------- VOXBI (richiesta in linguaggio naturale → report) ----------
+function voxAnalyze(query) {
+  const s = (query || '').toLowerCase();
+  const has = (...ks) => ks.some(k => s.includes(k));
+
+  // misura
+  let measure = 'fatturato';
+  if (has('margin')) measure = (has('%') || has('percentu')) ? 'marginePct' : 'margine';
+  else if (has('scadut', 'insolut', 'credit')) measure = 'scaduto';
+  else if (has('budget', 'target', 'obiettiv', 'raggiungiment')) measure = 'achiev';
+  else if (has('quantit', 'pezzi', 'volumi', ' pz')) measure = 'qta';
+
+  // dimensione
+  let dim = 'famiglia';
+  if (has('client')) dim = 'cliente';
+  else if (has('region')) dim = 'regione';
+  else if (has('andamento', 'trend', 'mensile', 'mese', 'tempo', 'crescita', 'evoluzione', 'trimestre')) dim = 'mese';
+  else if (has('area', 'italia', 'export', 'estero', 'geografi')) dim = 'area';
+  else if (has('famiglia', 'prodott', 'linea', 'articol')) dim = 'famiglia';
+
+  // filtri
+  let facts = FACTS; const fl = [];
+  const bothAreas = has('italia') && has('export', 'estero'); // confronto: non filtrare, ma analizzare per area
+  if (bothAreas) dim = 'area';
+  else {
+    if (has('italia')) { facts = facts.filter(r => r.area === 'Italia'); fl.push('Italia'); }
+    if (has('export', 'estero')) { facts = facts.filter(r => r.area === 'Export'); fl.push('Export'); }
+  }
+  [['valvol', 'Valvole anti-riflusso'], ['griglie', 'Griglie di aerazione'], ['raccordi pp', 'Raccordi PP'], ['raccordi pvc', 'Raccordi PVC'], ['raccordi', 'Raccordi PVC'], ['sifon', 'Sifoni'], ['drenaggio', 'Drenaggio suolo'], ['cassette', 'Cassette WC']].forEach(([k, n]) => { if (s.includes(k) && !fl.includes(n)) { facts = facts.filter(r => r.famiglia === n); fl.push(n); } });
+  OLAP_CLI.forEach(c => { const k = c.name.toLowerCase().split(' ')[0]; if (k.length > 3 && s.includes(k)) { facts = facts.filter(r => r.cliente === c.name); if (!fl.includes(c.name)) fl.push(c.name); } });
+  const MESI_FULL = { gennaio: 'Gen', febbraio: 'Feb', marzo: 'Mar', aprile: 'Apr', maggio: 'Mag', giugno: 'Giu' };
+  Object.keys(MESI_FULL).forEach(mn => { if (s.includes(mn)) { facts = facts.filter(r => r.mese === MESI_FULL[mn]); fl.push(mn[0].toUpperCase() + mn.slice(1)); } });
+
+  const wantTime = has('andamento', 'trend', 'mensile', 'mese', 'tempo', 'crescita', 'evoluzione', 'trimestre');
+  const wantArea = has('area', 'italia', 'export', 'estero', 'geografi');
+  const wantBudget = has('budget', 'target', 'obiettiv', 'raggiungiment');
+  const wantMargin = has('margin');
+
+  // dataset
+  const monthsM = OLAP_MESI.map(m => ({ label: m.name, val: olapAgg(facts.filter(r => r.mese === m.name), measure) }));
+  const monthsFat = OLAP_MESI.map(m => ({ label: m.name, val: olapAgg(facts.filter(r => r.mese === m.name), 'fatturato') }));
+  const monthsBud = OLAP_MESI.map(m => ({ label: m.name, val: olapAgg(facts.filter(r => r.mese === m.name), 'budget') }));
+  const areaRows = ['Italia', 'Export'].map(a => ({ label: a, val: olapAgg(facts.filter(r => r.area === a), 'fatturato') }));
+  const achFam = OLAP_FAM.map(f => ({ label: f.name, val: olapAgg(facts.filter(r => r.famiglia === f.name), 'achiev') })).sort((a, b) => b.val - a.val);
+  const marFam = OLAP_FAM.map(f => ({ label: f.name, val: olapAgg(facts.filter(r => r.famiglia === f.name), 'marginePct') })).sort((a, b) => b.val - a.val);
+  const rank = olapDistinct(facts, dim).map(v => ({ label: v, val: olapAgg(facts.filter(r => r[dim] === v), measure) })).sort((a, b) => Math.abs(b.val) - Math.abs(a.val)).slice(0, 8);
+
+  // grafici scelti in base alla richiesta
+  const charts = [];
+  if (dim === 'mese') charts.push({ t: `${MEASURES[measure].label} per mese`, s: 'andamento nel tempo', html: chLine(monthsM, measure, (measure === 'fatturato' ? monthsBud : null), 'budget') });
+  else if (dim === 'area') charts.push({ t: 'Italia vs Export', s: `${MEASURES[measure].label} per area`, html: chBars(rank, measure, 70) });
+  else charts.push({ t: `${MEASURES[measure].label} per ${BI_FIELDS[dim].label.toLowerCase()}`, s: 'classifica', html: chBars(rank, measure, 150) });
+  if (dim !== 'mese' && (wantTime || charts.length < 2)) charts.push({ t: 'Fatturato vs Budget · mese', s: '<span style="color:#1b4a93;font-weight:600;">consuntivo</span> vs <span style="color:#cab32e;font-weight:600;">budget</span>', html: chLine(monthsFat, 'fatturato', monthsBud, 'budget') });
+  if ((wantArea || charts.length < 3) && dim !== 'area' && !fl.includes('Italia') && !fl.includes('Export')) charts.push({ t: 'Quota Italia vs Export', s: 'quota di fatturato', html: chDonut(areaRows, 'fatturato') });
+  if (wantBudget) charts.push({ t: '% su budget per famiglia', s: 'raggiungimento target', html: chColumns(achFam, 'achiev') });
+  else if (wantMargin) charts.push({ t: 'Margine % per famiglia', s: 'redditività', html: chColumns(marFam, 'marginePct') });
+  const charts4 = charts.slice(0, 4);
+
+  // KPI
+  const kFat = olapAgg(facts, 'fatturato'), kMar = olapAgg(facts, 'marginePct'), kScad = olapAgg(facts, 'scaduto'), kAch = olapAgg(facts, 'achiev');
+  const kpis = [
+    { v: olapFmt(kFat, 'fatturato'), l: 'Fatturato', c: '#211d17' },
+    { v: olapFmt(kMar, 'marginePct'), l: 'Margine medio', c: '#2e9e5f' },
+  ];
+  if (wantBudget) kpis.push({ v: olapFmt(kAch, 'achiev'), l: '% su budget', c: olapBarColor('achiev', kAch) });
+  else kpis.push({ v: olapFmt(kScad, 'scaduto'), l: 'Scaduto', c: '#d23b2c' });
+
+  // narrazione (riusa il motore della BI)
+  const nar = biNarrative({ filters: {} }, facts, dim === 'mese' ? ['mese'] : [dim], dim === 'mese' ? [] : ['mese'], [measure]);
+  const lead = `Ho letto la richiesta come <strong>${MEASURES[measure].label}</strong> per <strong>${BI_FIELDS[dim].label.toLowerCase()}</strong>${fl.length ? ` · filtri: ${fl.join(', ')}` : ''}.`;
+  const bullets = [lead].concat(nar.bullets);
+
+  const headline = (query || '').trim() ? query.trim() : 'Panoramica vendite';
+  return { headline, subtitle: `${MEASURES[measure].label} per ${BI_FIELDS[dim].label.toLowerCase()}${fl.length ? ' · ' + fl.join(', ') : ''}`, kpis, charts: charts4, bullets };
+}
+
+function voxScreen() {
+  const v = App.state.vox;
+  const examples = [
+    'Fatturato per famiglia',
+    'Andamento vendite vs budget',
+    'Margine per cliente in Italia',
+    'Scaduto per cliente',
+    'Vendite valvole anti-riflusso per area',
+    '% su budget per famiglia',
+  ];
+  const chips = examples.map(q => `<button data-h="${App.reg(() => App.voxAsk(q))}" style="appearance:none;cursor:pointer;border:1px solid #cdd8f0;background:#eef2fb;color:#1b4a93;font-size:12px;font-weight:600;padding:7px 12px;border-radius:999px;">${q}</button>`).join('');
+  const inputVal = (v.query || '').replace(/"/g, '&quot;');
+
+  const ask = `
+    <div style="background:#16213f;border-radius:16px;padding:22px 24px;position:relative;overflow:hidden;">
+      <div style="position:absolute;right:-30px;top:-30px;width:170px;height:170px;background:radial-gradient(circle,rgba(27,74,147,.4),transparent 70%);"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;position:relative;">
+        <span style="width:30px;height:30px;border-radius:8px;background:#1b4a93;color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none;">🎙️</span>
+        <div><div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;color:#fff;">VoxBI</div><div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:#6f8fd8;">chiedi in linguaggio naturale</div></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;position:relative;">
+        <input id="voxInput" type="text" placeholder="Es. «Margine per cliente in Italia» oppure «Andamento vendite vs budget»" value="${inputVal}" style="flex:1;min-width:280px;appearance:none;border:1px solid #34406a;background:#0f1830;color:#fff;font-family:'IBM Plex Sans',sans-serif;font-size:14px;padding:12px 14px;border-radius:10px;outline:none;">
+        <button data-h="${App.reg(() => App.voxSubmit())}" style="appearance:none;cursor:pointer;border:none;background:#1b4a93;color:#fff;font-family:'IBM Plex Sans',sans-serif;font-weight:600;font-size:14px;padding:12px 20px;border-radius:10px;">Genera report →</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:13px;position:relative;">${chips}</div>
+    </div>`;
+
+  if (!v.submitted || !(v.query || '').trim()) {
+    return `
+    <div style="max-width:1100px;margin:0 auto;padding:24px;">
+      <div style="margin-bottom:16px;">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#8a8073;">VoxBI · BI conversazionale</span>
+        <h1 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:24px;letter-spacing:-.02em;color:#211d17;margin:8px 0 0;">Fai una domanda, l'agente costruisce il report</h1>
+      </div>
+      ${ask}
+      <div style="margin-top:18px;text-align:center;color:#8a8073;font-size:13px;">Scrivi una richiesta o tocca un esempio: genero narrazione e grafici in tempo reale, scelti in base alla domanda.</div>
+    </div>`;
+  }
+
+  const r = voxAnalyze(v.query);
+  const kpiHtml = r.kpis.map(k => `<div style="flex:1;min-width:130px;background:#fff;border:1px solid #e4ddd2;border-radius:12px;padding:13px 15px;"><div style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;color:${k.c};line-height:1;">${k.v}</div><div style="font-size:11px;color:#8a8073;margin-top:6px;">${k.l}</div></div>`).join('');
+  const chartsHtml = r.charts.map(c => `<div style="background:#fff;border:1px solid #e4ddd2;border-radius:12px;padding:15px 16px;"><div style="font-weight:600;font-size:13.5px;color:#211d17;">${c.t}</div><div style="font-size:11px;color:#8a8073;margin-bottom:13px;">${c.s}</div>${c.html}</div>`).join('');
+  const bulletsHtml = r.bullets.map(b => `<li style="margin-bottom:8px;">${b}</li>`).join('');
+  const sendH = App.reg(() => App.toast(`Report VoxBI «${r.headline}» inviato a Gaetano e Barbara Carluccio (PDF).`));
+
+  return `
+  <div style="max-width:1180px;margin:0 auto;padding:24px;">
+    <div style="margin-bottom:16px;">
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#8a8073;">VoxBI · BI conversazionale</span>
+      <h1 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:24px;letter-spacing:-.02em;color:#211d17;margin:8px 0 0;">Fai una domanda, l'agente costruisce il report</h1>
+    </div>
+    ${ask}
+
+    <div style="margin-top:18px;background:#fff;border:1px solid #e4ddd2;border-radius:14px;padding:18px 20px;box-shadow:0 1px 2px rgba(33,29,23,.04);">
+      <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <div style="flex:1;min-width:240px;">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:#a99e8d;">Richiesta interpretata</div>
+          <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;color:#211d17;margin:4px 0 2px;">«${r.headline}»</h2>
+          <div style="font-size:12px;color:#8a8073;">${r.subtitle}</div>
+        </div>
+        <button data-h="${sendH}" style="appearance:none;cursor:pointer;border:none;background:#1b4a93;color:#fff;font-size:12.5px;font-weight:600;padding:9px 14px;border-radius:9px;">Invia report</button>
+        <button data-h="${App.reg(() => App.voxReset())}" style="appearance:none;cursor:pointer;border:1px solid #e4ddd2;background:#fff;color:#5a5247;font-size:12.5px;font-weight:600;padding:9px 14px;border-radius:9px;">Nuova domanda</button>
+      </div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">${kpiHtml}</div>
+
+      <div style="display:flex;gap:10px;background:#16213f;border-radius:11px;padding:14px 16px;margin-bottom:16px;">
+        <span style="width:24px;height:24px;border-radius:6px;background:#1b4a93;color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;flex:none;">AI</span>
+        <ul style="margin:2px 0;padding-left:18px;font-size:13px;line-height:1.55;color:#cfc8bd;">${bulletsHtml}</ul>
+      </div>
+
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:#a99e8d;margin-bottom:10px;">Grafici generati in tempo reale</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">${chartsHtml}</div>
+    </div>
+  </div>`;
+}
+
 // ---------- TOAST ----------
 function toastView() {
   if (!App.state.toastShow) return '';
@@ -1574,6 +1734,11 @@ appEl.addEventListener('drop', e => {
   e.preventDefault();
   const field = e.dataTransfer.getData('text/plain');
   if (field && BI_FIELDS[field]) App.biDrop(field, z.getAttribute('data-drop'));
+});
+
+// VoxBI: invia con Enter
+appEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target && e.target.id === 'voxInput') { e.preventDefault(); App.voxSubmit(); }
 });
 
 App.render();
